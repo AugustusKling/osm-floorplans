@@ -92,9 +92,9 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           frameState.viewState.projection
         )
       : undefined;
-    const screenGeometry = geometry
-      .clone()
-      .simplifyTransformed(squaredTolerance, userTransform);
+    const screenGeometry = geometry.clone();
+    // TODO Simplification disable as it leads to invalid geometries in some cases.
+    //.simplifyTransformed(squaredTolerance, userTransform);
     screenGeometry.applyTransform((coords, dest, dim) => {
       return transform2D(coords, 0, coords.length, dim, transform, dest);
     });
@@ -198,7 +198,14 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     rotation: number
   ) => {
     for (const feature of this.features) {
-      this.renderFeature(feature, frameState, transform, rotation);
+      try {
+        this.renderFeature(feature, frameState, transform, rotation);
+      } catch (e) {
+        console.warn(
+          'Failed to render ' + feature.getId() + ', skipping it.',
+          e
+        );
+      }
     }
   };
 
