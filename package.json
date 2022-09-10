@@ -1,0 +1,10 @@
+{
+  "name": "typescript",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@types/jsts": "^0.17.13",
+    "ol": "7.1.0",
+    "proj4": "2.8.0"
+  }
+}

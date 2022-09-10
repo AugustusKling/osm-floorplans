@@ -1,0 +1,24 @@
+@import 'node_modules/ol/ol.css';
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+#map {
+  height: 100vh;
+}
+
+#levelPicker {
+  position: absolute;
+  top: 1ex;
+  right: 1ex;
+  display: flex;
+  flex-direction: column;
+  gap:0.5ex;
+}
+
+#levelPicker button.active {
+  filter: invert();
+}

@@ -1,0 +1,7 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "resolveJsonModule": true,
+    "lib": "es2019"
+  }
+}
