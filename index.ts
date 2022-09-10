@@ -18,6 +18,7 @@ import {
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { Fill, RegularShape, Stroke, Style, Text, Icon } from 'ol/style';
+import { LabelLayer } from './LabelLayer';
 
 const map = new Map({
   target: 'map',
@@ -31,7 +32,6 @@ const map = new Map({
     zoom: 2,
   }),
 });
-const map2 = map;
 
 const format = new GeoJSON({
   featureProjection: 'EPSG:3857',
@@ -96,7 +96,6 @@ const roomStyle = new Style({
   fill: new Fill({
     color: 'white',
   }),
-  text: new Text({}),
 });
 const roomIconStyle = new Style({
   geometry: (f) => {
@@ -156,23 +155,31 @@ const stairsStyle = [
 map.addLayer(
   new VectorLayer({
     source,
+    renderOrder: (f1, f2) => {
+      const g1 = f1.getGeometry();
+      const g2 = f2.getGeometry();
+      if (g1 instanceof Polygon && g2 instanceof Polygon) {
+        if (f1.get('wall')) {
+          return -1;
+        }
+        if (f2.get('wall')) {
+          return 1;
+        }
+        return g2.getArea() - g1.getArea();
+      }
+      if (g1 instanceof Polygon) {
+        return -1;
+      }
+      if (g2 instanceof Polygon) {
+        return 1;
+      }
+      return features.indexOf(f2 as Feature) - features.indexOf(f1 as Feature);
+    },
     style: (f, meterPerPixel) => {
       if (
         ['room', 'corridor', 'area'].includes(f.get('indoor')) ||
         f.get('room')
       ) {
-        const text = [];
-        if (f.get('name')) {
-          text.push(f.get('name'), 'bold 12px sans-serif');
-        }
-        if (f.get('ref')) {
-          if (f.get('name')) {
-            text.push('\n', '');
-          }
-          text.push(f.get('ref'), '');
-        }
-        roomStyle.getText().setText(text);
-
         roomStyle.getFill().setColor('white');
         if (f.get('indoor') === 'corridor') {
           roomStyle.getFill().setColor('#dfc');
@@ -272,6 +279,30 @@ map.addLayer(
           }
           return stairsStyle;
         }
+      }
+    },
+  })
+);
+
+map.addLayer(
+  new LabelLayer({
+    source,
+    labelProvider: (f, label) => {
+      label.style.textAlign = 'center';
+      const name = f.get('name');
+      if (name) {
+        const title = document.createElement('p');
+        title.style.font = 'bold 12px sans-serif';
+        title.style.margin = '0.5ex 0';
+        title.append(name);
+        label.append(title);
+      }
+      if (f.get('ref')) {
+        const ref = document.createElement('p');
+        ref.style.font = '12px sans-serif';
+        ref.style.margin = '0.5ex 0';
+        ref.append(f.get('ref'));
+        label.append(ref);
       }
     },
   })
