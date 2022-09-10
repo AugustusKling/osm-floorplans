@@ -1,5 +1,6 @@
 import { Feature } from 'ol';
 import { getHeight, getWidth } from 'ol/extent';
+import { GeoJSON } from 'ol/format';
 import {
   LineString,
   LinearRing,
@@ -21,8 +22,9 @@ import {
 import LayerRenderer from 'ol/renderer/Layer';
 import { getSquaredTolerance } from 'ol/renderer/vector';
 import VectorSource from 'ol/source/Vector';
-import { compose, create, Transform } from 'ol/transform';
+import { apply, compose, create, Transform } from 'ol/transform';
 import ViewHint from 'ol/ViewHint';
+import polylabel from 'polylabel';
 
 type LabelProvider = (
   feature: Feature,
@@ -52,6 +54,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   private tempTransform = create();
   private features: Feature[];
   private parser = new jsts.io.OL3Parser();
+  private geoJson = new GeoJSON();
 
   constructor(layer: LabelLayer) {
     super(layer);
@@ -96,9 +99,6 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       return transform2D(coords, 0, coords.length, dim, transform, dest);
     });
     if (screenGeometry instanceof Polygon) {
-      const screenGeometryCenter = screenGeometry
-        .getInteriorPoint()
-        .getCoordinates();
       const label = document.createElement('div');
       label.style.position = 'absolute';
       let maxWidth = getWidth(screenGeometry.getExtent());
@@ -110,13 +110,34 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       }
       this.container.append(label);
 
+      if (label.scrollWidth > maxWidth) {
+        // No valid label placement.
+        this.container.removeChild(label);
+        return;
+      }
+
       const range = new Range();
       range.selectNodeContents(label);
       let rangeRect: DOMRect;
+      const screenGeometryCenter = polylabel(
+        this.geoJson.writeGeometryObject(geometry).coordinates
+      );
+      // TODO Apply user transformation.
+      apply(transform, screenGeometryCenter);
       const screenGeometryJts = this.parser.read(screenGeometry);
       let foundPlacement = false;
       for (let i = 0; i < 10; i++) {
         rangeRect = range.getBoundingClientRect();
+        if (
+          label.scrollWidth > maxWidth ||
+          rangeRect.width === 0 ||
+          rangeRect.width > maxWidth ||
+          rangeRect.height > getHeight(screenGeometry.getExtent())
+        ) {
+          // No valid label placement.
+          break;
+        }
+
         const rects: jsts.geom.Geometry[] = Array.from(
           range.getClientRects()
         ).map((rect) => {
@@ -138,19 +159,12 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           foundPlacement = true;
           break;
         }
-        if (
-          rangeRect.width === 0 ||
-          rangeRect.width > maxWidth ||
-          rangeRect.height > getHeight(screenGeometry.getExtent())
-        ) {
-          // No valid label placement.
-          break;
-        }
 
-        maxWidth = screenGeometryJts
-          .intersection(allRects)
-          .getEnvelopeInternal()
-          .getWidth();
+        maxWidth =
+          screenGeometryJts
+            .intersection(allRects)
+            .getEnvelopeInternal()
+            .getWidth() - 20;
         label.style.maxWidth = `${maxWidth}px`;
       }
       range.detach();
