@@ -29,8 +29,9 @@ import polylabel from 'polylabel';
 type LabelProvider = (
   feature: Feature,
   label: HTMLDivElement,
+  variant: string,
   frameState: FrameState
-) => void;
+) => string | void;
 
 export class LabelLayer extends Layer<VectorSource> {
   private labelProvider: LabelProvider;
@@ -165,87 +166,102 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       const label = document.createElement('div');
       label.style.position = 'absolute';
       let maxWidth = getWidth(screenGeometry.getExtent());
-      label.style.maxWidth = `${maxWidth}px`;
-      this.getLayer().getLabelProvider()(feature, label, frameState);
-      if (label.childNodes.length === 0) {
-        // Abort rendering, no label contents.
-        cached.labels[resolutionCacheKey] = null;
-        return;
-      }
-      this.container.append(label);
 
-      if (label.scrollWidth > maxWidth) {
-        // No valid label placement.
-        cached.labels[resolutionCacheKey] = null;
-        this.container.removeChild(label);
-        return;
-      }
+      let variant: string | void = 'default';
+      while (variant) {
+        label.style.maxWidth = `${maxWidth}px`;
+        label.innerHTML = '';
+        variant = this.getLayer().getLabelProvider()(
+          feature,
+          label,
+          variant,
+          frameState
+        );
 
-      const range = new Range();
-      range.selectNodeContents(label);
-      let rangeRect: DOMRect;
-      cached.inacessibilityPole =
-        cached.inacessibilityPole ||
-        (polylabel(this.geoJson.writeGeometryObject(geometry).coordinates) as [
-          number,
-          number
-        ]);
-      const screenGeometryCenter = [...cached.inacessibilityPole];
-      // TODO Apply user transformation.
-      apply(transform, screenGeometryCenter);
-      const screenGeometryJts = this.parser.read(screenGeometry);
-      for (let i = 0; i < 10; i++) {
-        rangeRect = range.getBoundingClientRect();
-        if (
-          label.scrollWidth > maxWidth ||
-          rangeRect.width === 0 ||
-          rangeRect.width > maxWidth ||
-          rangeRect.height > getHeight(screenGeometry.getExtent())
-        ) {
+        if (label.childNodes.length === 0) {
+          // Abort rendering, no label contents.
+          cached.labels[resolutionCacheKey] = null;
+          return;
+        }
+        this.container.append(label);
+
+        if (label.scrollWidth > maxWidth) {
           // No valid label placement.
           cached.labels[resolutionCacheKey] = null;
-          break;
+          this.container.removeChild(label);
+          return;
         }
 
-        const rects: jsts.geom.Geometry[] = Array.from(
-          range.getClientRects()
-        ).map((rect) => {
-          const envelope = new jsts.geom.Envelope(
-            screenGeometryCenter[0] - rangeRect.width / 2 + rect.left,
-            screenGeometryCenter[0] - rangeRect.width / 2 + rect.right,
-            screenGeometryCenter[1] - rangeRect.height / 2 + rect.top,
-            screenGeometryCenter[1] - rangeRect.height / 2 + rect.bottom
-          );
-          return screenGeometryJts.getFactory().toGeometry(envelope);
-        });
-        const allRects =
-          rects.length > 0
-            ? rects.reduce((prev, current) => prev.union(current))
-            : undefined;
+        const range = new Range();
+        range.selectNodeContents(label);
+        let rangeRect: DOMRect;
+        cached.inacessibilityPole =
+          cached.inacessibilityPole ||
+          (polylabel(
+            this.geoJson.writeGeometryObject(geometry).coordinates
+          ) as [number, number]);
+        const screenGeometryCenter = [...cached.inacessibilityPole];
+        // TODO Apply user transformation.
+        apply(transform, screenGeometryCenter);
+        const screenGeometryJts = this.parser.read(screenGeometry);
+        for (let i = 0; i < 10; i++) {
+          rangeRect = range.getBoundingClientRect();
+          if (
+            label.scrollWidth > maxWidth ||
+            rangeRect.width === 0 ||
+            rangeRect.width > maxWidth ||
+            rangeRect.height > getHeight(screenGeometry.getExtent())
+          ) {
+            // No valid label placement.
+            cached.labels[resolutionCacheKey] = null;
+            break;
+          }
 
-        if (allRects && screenGeometryJts.contains(allRects)) {
-          //Found okay
-          cached.labels[resolutionCacheKey] = {
-            div: label,
-            width: rangeRect.width,
-            height: rangeRect.height,
-          };
-          break;
+          const rects: jsts.geom.Geometry[] = Array.from(
+            range.getClientRects()
+          ).map((rect) => {
+            const envelope = new jsts.geom.Envelope(
+              screenGeometryCenter[0] - rangeRect.width / 2 + rect.left,
+              screenGeometryCenter[0] - rangeRect.width / 2 + rect.right,
+              screenGeometryCenter[1] - rangeRect.height / 2 + rect.top,
+              screenGeometryCenter[1] - rangeRect.height / 2 + rect.bottom
+            );
+            return screenGeometryJts.getFactory().toGeometry(envelope);
+          });
+          const allRects =
+            rects.length > 0
+              ? rects.reduce((prev, current) => prev.union(current))
+              : undefined;
+
+          if (allRects && screenGeometryJts.contains(allRects)) {
+            //Found okay
+            cached.labels[resolutionCacheKey] = {
+              div: label,
+              width: rangeRect.width,
+              height: rangeRect.height,
+            };
+            break;
+          }
+
+          maxWidth =
+            screenGeometryJts
+              .intersection(allRects)
+              .getEnvelopeInternal()
+              .getWidth() - 20;
+          label.style.maxWidth = `${maxWidth}px`;
         }
-
-        maxWidth =
-          screenGeometryJts
-            .intersection(allRects)
-            .getEnvelopeInternal()
-            .getWidth() - 20;
-        label.style.maxWidth = `${maxWidth}px`;
-      }
-      range.detach();
-      if (cached.labels[resolutionCacheKey]) {
-        label.style.left = `${screenGeometryCenter[0] - rangeRect.width / 2}px`;
-        label.style.top = `${screenGeometryCenter[1] - rangeRect.height / 2}px`;
-      } else {
-        this.container.removeChild(label);
+        range.detach();
+        if (cached.labels[resolutionCacheKey]) {
+          label.style.left = `${
+            screenGeometryCenter[0] - rangeRect.width / 2
+          }px`;
+          label.style.top = `${
+            screenGeometryCenter[1] - rangeRect.height / 2
+          }px`;
+          return;
+        } else {
+          this.container.removeChild(label);
+        }
       }
     }
   };

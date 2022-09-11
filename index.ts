@@ -4,7 +4,7 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import './style.css';
 
-import * as sample from './samples/rapperswil.json';
+import * as sample from './samples/wurzach.json';
 import GeoJSON from 'ol/format/GeoJSON';
 import {
   LineString,
@@ -287,22 +287,26 @@ map.addLayer(
 map.addLayer(
   new LabelLayer({
     source,
-    labelProvider: (f, label) => {
+    labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';
       const name = f.get('name');
-      if (name) {
+      if (variant !== 'ref-only' && name) {
         const title = document.createElement('p');
         title.style.font = 'bold 12px sans-serif';
         title.style.margin = '0';
         title.append(name);
         label.append(title);
       }
-      if (f.get('ref')) {
+      const reference = f.get('ref');
+      if (reference) {
         const ref = document.createElement('p');
         ref.style.font = '12px sans-serif';
         ref.style.margin = '0';
-        ref.append(f.get('ref'));
+        ref.append(reference);
         label.append(ref);
+      }
+      if (variant !== 'ref-only' && reference) {
+        return 'ref-only';
       }
     },
   })
