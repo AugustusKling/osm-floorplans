@@ -293,14 +293,14 @@ map.addLayer(
       if (name) {
         const title = document.createElement('p');
         title.style.font = 'bold 12px sans-serif';
-        title.style.margin = '0.5ex 0';
+        title.style.margin = '0';
         title.append(name);
         label.append(title);
       }
       if (f.get('ref')) {
         const ref = document.createElement('p');
         ref.style.font = '12px sans-serif';
-        ref.style.margin = '0.5ex 0';
+        ref.style.margin = '0';
         ref.append(f.get('ref'));
         label.append(ref);
       }

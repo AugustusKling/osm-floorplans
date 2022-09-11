@@ -49,12 +49,27 @@ export class LabelLayer extends Layer<VectorSource> {
   };
 }
 
+type CacheEntry = {
+  featureRevision: number;
+  geometryRevision: number;
+  inacessibilityPole: [number, number];
+  labels: Record<
+    number,
+    {
+      div: HTMLDivElement;
+      width: number;
+      height: number;
+    }
+  >;
+};
+
 class LabelRenderer extends LayerRenderer<LabelLayer> {
   private container = document.createElement('div');
   private tempTransform = create();
   private features: Feature[];
   private parser = new jsts.io.OL3Parser();
   private geoJson = new GeoJSON();
+  private cache = new WeakMap<Feature, CacheEntry>();
 
   constructor(layer: LabelLayer) {
     super(layer);
@@ -74,12 +89,60 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     );
   }
 
+  private getCacheEntry = (feature: Feature): CacheEntry => {
+    const geometry = feature.getGeometry();
+
+    const existing = this.cache.get(feature);
+    const featureRevision = feature.getRevision();
+    const geometryRevision = geometry.getRevision();
+    if (
+      existing?.featureRevision === featureRevision &&
+      existing?.geometryRevision === geometryRevision
+    ) {
+      return existing;
+    } else {
+      const created: CacheEntry = {
+        featureRevision,
+        geometryRevision,
+        inacessibilityPole: undefined,
+        labels: {},
+      };
+      this.cache.set(feature, created);
+      return created;
+    }
+  };
+
   renderFeature = (
     feature: Feature,
     frameState: FrameState,
     transform: Transform,
     rotation: number
   ): void => {
+    const cached = this.getCacheEntry(feature);
+    // TODO When zoomin, find bigger resolution
+    const resolutionCacheKey = String(
+      Math.floor(frameState.viewState.resolution * 1e3)
+    );
+    if (cached.labels[resolutionCacheKey] === null) {
+      // Known that label does not fit or is undesired.
+      return;
+    }
+    if (cached.labels[resolutionCacheKey]) {
+      const screenGeometryCenter = [...cached.inacessibilityPole];
+      // TODO Apply user transformation.
+      apply(transform, screenGeometryCenter);
+
+      const labelParams = cached.labels[resolutionCacheKey];
+      labelParams.div.style.left = `${
+        screenGeometryCenter[0] - labelParams.width / 2
+      }px`;
+      labelParams.div.style.top = `${
+        screenGeometryCenter[1] - labelParams.height / 2
+      }px`;
+      this.container.append(labelParams.div);
+      return;
+    }
+
     const geometry = feature.getGeometry();
     const squaredTolerance = getSquaredTolerance(
       frameState.viewState.resolution,
@@ -106,12 +169,14 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       this.getLayer().getLabelProvider()(feature, label, frameState);
       if (label.childNodes.length === 0) {
         // Abort rendering, no label contents.
+        cached.labels[resolutionCacheKey] = null;
         return;
       }
       this.container.append(label);
 
       if (label.scrollWidth > maxWidth) {
         // No valid label placement.
+        cached.labels[resolutionCacheKey] = null;
         this.container.removeChild(label);
         return;
       }
@@ -119,13 +184,16 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       const range = new Range();
       range.selectNodeContents(label);
       let rangeRect: DOMRect;
-      const screenGeometryCenter = polylabel(
-        this.geoJson.writeGeometryObject(geometry).coordinates
-      );
+      cached.inacessibilityPole =
+        cached.inacessibilityPole ||
+        (polylabel(this.geoJson.writeGeometryObject(geometry).coordinates) as [
+          number,
+          number
+        ]);
+      const screenGeometryCenter = [...cached.inacessibilityPole];
       // TODO Apply user transformation.
       apply(transform, screenGeometryCenter);
       const screenGeometryJts = this.parser.read(screenGeometry);
-      let foundPlacement = false;
       for (let i = 0; i < 10; i++) {
         rangeRect = range.getBoundingClientRect();
         if (
@@ -135,6 +203,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           rangeRect.height > getHeight(screenGeometry.getExtent())
         ) {
           // No valid label placement.
+          cached.labels[resolutionCacheKey] = null;
           break;
         }
 
@@ -156,7 +225,11 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
 
         if (allRects && screenGeometryJts.contains(allRects)) {
           //Found okay
-          foundPlacement = true;
+          cached.labels[resolutionCacheKey] = {
+            div: label,
+            width: rangeRect.width,
+            height: rangeRect.height,
+          };
           break;
         }
 
@@ -168,7 +241,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         label.style.maxWidth = `${maxWidth}px`;
       }
       range.detach();
-      if (foundPlacement) {
+      if (cached.labels[resolutionCacheKey]) {
         label.style.left = `${screenGeometryCenter[0] - rangeRect.width / 2}px`;
         label.style.top = `${screenGeometryCenter[1] - rangeRect.height / 2}px`;
       } else {
@@ -239,7 +312,6 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         center,
         resolution,
         rotation,
-        pixelRatio,
         width,
         height,
         world * worldWidth
@@ -253,25 +325,16 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
    * @param {import("../../coordinate.js").Coordinate} center Center.
    * @param {number} resolution Resolution.
    * @param {number} rotation Rotation.
-   * @param {number} pixelRatio Pixel ratio.
    * @param {number} width Width of the rendered element (in pixels).
    * @param {number} height Height of the rendered element (in pixels).
    * @param {number} offsetX Offset on the x-axis in view coordinates.
    * @protected
    * @return {!import("../../transform.js").Transform} Transform.
    */
-  getRenderTransform(
-    center,
-    resolution,
-    rotation,
-    pixelRatio,
-    width,
-    height,
-    offsetX
-  ) {
+  getRenderTransform(center, resolution, rotation, width, height, offsetX) {
     const dx1 = width / 2;
     const dy1 = height / 2;
-    const sx = pixelRatio / resolution;
+    const sx = 1 / resolution;
     const sy = -sx;
     const dx2 = -center[0] + offsetX;
     const dy2 = -center[1];
