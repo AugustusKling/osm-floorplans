@@ -307,13 +307,12 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     const rotation = viewState.rotation;
     const projectionExtent = projection.getExtent();
     const vectorSource = this.getLayer().getSource();
-    const pixelRatio = frameState.pixelRatio;
     const viewHints = frameState.viewHints;
     const snapToPixel = !(
       viewHints[ViewHint.ANIMATING] || viewHints[ViewHint.INTERACTING]
     );
-    const width = Math.round(frameState.size[0] * pixelRatio);
-    const height = Math.round(frameState.size[1] * pixelRatio);
+    const width = Math.round(frameState.size[0]);
+    const height = Math.round(frameState.size[1]);
 
     const multiWorld = vectorSource.getWrapX() && projection.canWrapX();
     const worldWidth = multiWorld ? getWidth(projectionExtent) : null;
