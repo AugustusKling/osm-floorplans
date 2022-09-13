@@ -277,7 +277,11 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   };
 
   renderFrame = (frameState: FrameState, target: HTMLElement): HTMLElement => {
-    this.renderWorlds(frameState);
+    if (this.container.parentElement === null) {
+      this.changed();
+    } else {
+      this.renderWorlds(frameState);
+    }
     return this.container;
   };
 
