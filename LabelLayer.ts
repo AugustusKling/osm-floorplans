@@ -1,4 +1,5 @@
 import { Feature } from 'ol';
+import { Coordinate } from 'ol/coordinate';
 import { getHeight, getWidth } from 'ol/extent';
 import { GeoJSON } from 'ol/format';
 import {
@@ -54,14 +55,11 @@ type CacheEntry = {
   featureRevision: number;
   geometryRevision: number;
   inacessibilityPole: [number, number];
-  labels: Record<
-    number,
-    {
-      div: HTMLDivElement;
-      width: number;
-      height: number;
-    }
-  >;
+  labels: {
+    div: HTMLDivElement;
+    width: number;
+    height: number;
+  }[];
 };
 
 class LabelRenderer extends LayerRenderer<LabelLayer> {
@@ -75,7 +73,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   constructor(layer: LabelLayer) {
     super(layer);
     this.container.style.position = 'absolute';
-    this.container.style.width = '100%';
+    this.container.style.width = '200%';
     this.container.style.height = '100%';
     this.container.style.pointerEvents = 'none';
 
@@ -106,7 +104,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         featureRevision,
         geometryRevision,
         inacessibilityPole: undefined,
-        labels: {},
+        labels: [],
       };
       this.cache.set(feature, created);
       return created;
@@ -117,13 +115,13 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     feature: Feature,
     frameState: FrameState,
     transform: Transform,
+    world: number,
     rotation: number
-  ): void => {
+  ): HTMLElement => {
     const cached = this.getCacheEntry(feature);
-    // TODO When zoomin, find bigger resolution
-    const resolutionCacheKey = String(
-      Math.floor(frameState.viewState.resolution * 1e3)
-    );
+    const resolutionCacheKey =
+      2 * Math.floor(frameState.viewState.zoom) +
+      (Math.ceil(frameState.viewState.zoom * 10) % 10 >= 5 ? 1 : 0);
     if (cached.labels[resolutionCacheKey] === null) {
       // Known that label does not fit or is undesired.
       return;
@@ -134,14 +132,18 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       apply(transform, screenGeometryCenter);
 
       const labelParams = cached.labels[resolutionCacheKey];
-      labelParams.div.style.left = `${
+      const labelDiv =
+        world === 0
+          ? labelParams.div
+          : (labelParams.div.cloneNode(true) as HTMLDivElement);
+      labelDiv.style.left = `${
         screenGeometryCenter[0] - labelParams.width / 2
       }px`;
-      labelParams.div.style.top = `${
+      labelDiv.style.top = `${
         screenGeometryCenter[1] - labelParams.height / 2
       }px`;
-      this.container.append(labelParams.div);
-      return;
+      this.container.append(labelDiv);
+      return labelDiv;
     }
 
     const geometry = feature.getGeometry();
@@ -165,11 +167,11 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     if (screenGeometry instanceof Polygon) {
       const label = document.createElement('div');
       label.style.position = 'absolute';
-      let maxWidth = getWidth(screenGeometry.getExtent());
+      let maxWidth = Math.floor(getWidth(screenGeometry.getExtent()));
 
       let variant: string | void = 'default';
       while (variant) {
-        label.style.maxWidth = `${maxWidth}px`;
+        label.style.width = `${maxWidth}px`;
         label.innerHTML = '';
         variant = this.getLayer().getLabelProvider()(
           feature,
@@ -189,12 +191,11 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           // No valid label placement.
           cached.labels[resolutionCacheKey] = null;
           this.container.removeChild(label);
-          return;
+          continue;
         }
 
         const range = new Range();
-        range.selectNodeContents(label);
-        let rangeRect: DOMRect;
+        let rangeRect: jsts.geom.Envelope;
         cached.inacessibilityPole =
           cached.inacessibilityPole ||
           (polylabel(
@@ -205,26 +206,28 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         apply(transform, screenGeometryCenter);
         const screenGeometryJts = this.parser.read(screenGeometry);
         for (let i = 0; i < 10; i++) {
-          rangeRect = range.getBoundingClientRect();
+          const domRects = this.getRects(label, range);
+          rangeRect = new jsts.geom.Envelope();
+          for (const r of domRects) {
+            rangeRect.expandToInclude(r.left, r.top);
+            rangeRect.expandToInclude(r.right, r.bottom);
+          }
           if (
-            label.scrollWidth > maxWidth ||
-            rangeRect.width === 0 ||
-            rangeRect.width > maxWidth ||
-            rangeRect.height > getHeight(screenGeometry.getExtent())
+            label.scrollWidth - 2 > maxWidth ||
+            rangeRect.getWidth() === 0 ||
+            rangeRect.getHeight() > getHeight(screenGeometry.getExtent())
           ) {
             // No valid label placement.
             cached.labels[resolutionCacheKey] = null;
             break;
           }
 
-          const rects: jsts.geom.Geometry[] = Array.from(
-            range.getClientRects()
-          ).map((rect) => {
+          const rects: jsts.geom.Geometry[] = domRects.map((rect) => {
             const envelope = new jsts.geom.Envelope(
-              screenGeometryCenter[0] - rangeRect.width / 2 + rect.left,
-              screenGeometryCenter[0] - rangeRect.width / 2 + rect.right,
-              screenGeometryCenter[1] - rangeRect.height / 2 + rect.top,
-              screenGeometryCenter[1] - rangeRect.height / 2 + rect.bottom
+              screenGeometryCenter[0] - maxWidth / 2 + rect.left,
+              screenGeometryCenter[0] - maxWidth / 2 + rect.right,
+              screenGeometryCenter[1] - rangeRect.getHeight() / 2 + rect.top,
+              screenGeometryCenter[1] - rangeRect.getHeight() / 2 + rect.bottom
             );
             return screenGeometryJts.getFactory().toGeometry(envelope);
           });
@@ -237,28 +240,31 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             //Found okay
             cached.labels[resolutionCacheKey] = {
               div: label,
-              width: rangeRect.width,
-              height: rangeRect.height,
+              width: maxWidth,
+              height: rangeRect.getHeight(),
             };
             break;
           }
 
           maxWidth =
-            screenGeometryJts
-              .intersection(allRects)
-              .getEnvelopeInternal()
-              .getWidth() - 20;
-          label.style.maxWidth = `${maxWidth}px`;
+            Math.floor(
+              screenGeometryJts
+                .intersection(allRects)
+                .getEnvelopeInternal()
+                .getWidth()
+            ) - 1;
+          label.style.width = `${maxWidth}px`;
         }
         range.detach();
         if (cached.labels[resolutionCacheKey]) {
+          const labelParams = cached.labels[resolutionCacheKey];
           label.style.left = `${
-            screenGeometryCenter[0] - rangeRect.width / 2
+            screenGeometryCenter[0] - labelParams.width / 2
           }px`;
           label.style.top = `${
-            screenGeometryCenter[1] - rangeRect.height / 2
+            screenGeometryCenter[1] - labelParams.height / 2
           }px`;
-          return;
+          return label;
         } else {
           this.container.removeChild(label);
         }
@@ -266,33 +272,62 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     }
   };
 
+  private getRects(element: HTMLElement, range: Range): DOMRect[] {
+    const rects: DOMRect[] = [];
+    for (const child of element.childNodes) {
+      if (child instanceof Text) {
+        range.selectNodeContents(child);
+        rects.push(...range.getClientRects());
+      } else if (child instanceof HTMLElement) {
+        rects.push(...this.getRects(child, range));
+      }
+    }
+    return rects;
+  }
+
   prepareFrame = (frameState: FrameState): boolean => {
     const userExtent = toUserExtent(
       frameState.extent,
       frameState.viewState.projection
     );
     this.features = this.getLayer().getSource().getFeaturesInExtent(userExtent);
-    this.container.innerHTML = '';
-    return this.features.length > 0;
+    if (this.features.length === 0) {
+      this.container.innerHTML = '';
+      return false;
+    } else {
+      return true;
+    }
   };
 
   renderFrame = (frameState: FrameState, target: HTMLElement): HTMLElement => {
     if (this.container.parentElement === null) {
       this.changed();
     } else {
-      this.renderWorlds(frameState);
+      const labels = this.renderWorlds(frameState);
+      this.container.replaceChildren(...labels);
     }
     return this.container;
   };
 
   renderWorld = (
+    world: number,
     frameState: FrameState,
     transform: Transform,
     rotation: number
-  ) => {
+  ): HTMLElement[] => {
+    const presentLabels: HTMLElement[] = [];
     for (const feature of this.features) {
       try {
-        this.renderFeature(feature, frameState, transform, rotation);
+        const label = this.renderFeature(
+          feature,
+          frameState,
+          transform,
+          world,
+          rotation
+        );
+        if (label) {
+          presentLabels.push(label);
+        }
       } catch (e) {
         console.warn(
           'Failed to render ' + feature.getId() + ', skipping it.',
@@ -300,9 +335,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         );
       }
     }
+    return presentLabels;
   };
 
-  renderWorlds(frameState: FrameState) {
+  renderWorlds(frameState: FrameState): HTMLElement[] {
     const extent = frameState.extent;
     const viewState = frameState.viewState;
     const center = viewState.center;
@@ -326,6 +362,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     let world = multiWorld
       ? Math.floor((extent[0] - projectionExtent[0]) / worldWidth)
       : 0;
+    const presentLabels: HTMLElement[] = [];
     do {
       const transform = this.getRenderTransform(
         center,
@@ -335,8 +372,11 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         height,
         world * worldWidth
       );
-      this.renderWorld(frameState, transform, rotation);
+      presentLabels.push(
+        ...this.renderWorld(world, frameState, transform, rotation)
+      );
     } while (++world < endWorld);
+    return presentLabels;
   }
 
   /**
@@ -350,7 +390,14 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
    * @protected
    * @return {!import("../../transform.js").Transform} Transform.
    */
-  getRenderTransform(center, resolution, rotation, width, height, offsetX) {
+  getRenderTransform(
+    center: Coordinate,
+    resolution: number,
+    rotation: number,
+    width: number,
+    height: number,
+    offsetX: number
+  ): Transform {
     const dx1 = width / 2;
     const dy1 = height / 2;
     const sx = 1 / resolution;

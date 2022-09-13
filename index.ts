@@ -4,7 +4,7 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import './style.css';
 
-import * as sample from './samples/wurzach.json';
+import * as sample from './samples/paisley.json';
 import GeoJSON from 'ol/format/GeoJSON';
 import {
   LineString,
