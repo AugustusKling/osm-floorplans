@@ -4,7 +4,7 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import './style.css';
 
-import * as sample from './samples/paisley.json';
+import * as sample from './samples/wurzach.json';
 import GeoJSON from 'ol/format/GeoJSON';
 import {
   LineString,
@@ -19,6 +19,7 @@ import VectorLayer from 'ol/layer/Vector';
 import VectorSource from 'ol/source/Vector';
 import { Fill, RegularShape, Stroke, Style, Text, Icon } from 'ol/style';
 import { LabelLayer } from './LabelLayer';
+import { defaultOrder } from 'ol/renderer/vector';
 
 const map = new Map({
   target: 'map',
@@ -156,24 +157,32 @@ map.addLayer(
   new VectorLayer({
     source,
     renderOrder: (f1, f2) => {
-      const g1 = f1.getGeometry();
-      const g2 = f2.getGeometry();
-      if (g1 instanceof Polygon && g2 instanceof Polygon) {
-        if (f1.get('wall')) {
-          return -1;
-        }
-        if (f2.get('wall')) {
-          return 1;
-        }
-        return g2.getArea() - g1.getArea();
-      }
-      if (g1 instanceof Polygon) {
-        return -1;
-      }
-      if (g2 instanceof Polygon) {
+      // Draw walls last.
+      const f1Wall = f1.get('generated-wall') === 'yes';
+      const f2Wall = f2.get('generated-wall') === 'yes';
+      if (f1Wall && !f2Wall) {
         return 1;
       }
-      return features.indexOf(f2 as Feature) - features.indexOf(f1 as Feature);
+      if (f2Wall && !f1Wall) {
+        return -1;
+      }
+
+      const g1 = f1.getGeometry();
+      const g1Area = g1 instanceof Polygon || g1 instanceof MultiPolygon;
+      const g2 = f2.getGeometry();
+      const g2Area = g2 instanceof Polygon || g2 instanceof MultiPolygon;
+      if (g1Area && !g2Area) {
+        return -1;
+      }
+      if (g2Area && !g1Area) {
+        return 1;
+      }
+      // Draw smaller areas last.
+      if (g1Area && g2Area) {
+        return g2.getArea() - g1.getArea();
+      }
+
+      return defaultOrder(f1, f2);
     },
     style: (f, meterPerPixel) => {
       if (
@@ -206,7 +215,7 @@ map.addLayer(
 
         return roomStyle;
       }
-      if (f.get('wall')) {
+      if (f.get('generated-wall')) {
         return wallStyle;
       }
       if (
@@ -333,7 +342,9 @@ function rerenderLevel() {
     );
   }
 
+  /** Outline of walls that could have door openings. */
   const wallLines = new MultiLineString([]);
+  /** Walled, passable areas. Basically rooms of any type. */
   const wallSourceAreas = new MultiPolygon([]);
   for (const room of features.filter(
     (f) => isOnCurrentLevel(f) && ['room', 'corridor'].includes(f.get('indoor'))
@@ -387,6 +398,7 @@ function rerenderLevel() {
       parser.read(doorGeo).buffer(doorWidth / 2 - 0.5)
     );
   }
+  /** Wall segments that are passable by doors. */
   const doorLines = wallLinesJts.intersection(doorCirclesJts);
   const doorBuffersJts = jsts.operation.buffer.BufferOp.bufferOp(
     doorLines,
@@ -401,6 +413,7 @@ function rerenderLevel() {
 
   const outerWallWidth = 0.4;
   const innerWallWidth = 0.2;
+  // Expand walled areas to simulate thicker outer walls.
   let wallSourceAreasJts = jsts.operation.buffer.BufferOp.bufferOp(
     parser.read(wallSourceAreas),
     outerWallWidth - innerWallWidth / 2,
@@ -411,14 +424,7 @@ function rerenderLevel() {
       5
     )
   );
-  for (const wall of features.filter(
-    (f) => isOnCurrentLevel(f) && f.get('indoor') === 'wall'
-  )) {
-    const wallGeo = wall.getGeometry();
-    if (wallGeo instanceof Polygon || wallGeo instanceof MultiPolygon) {
-      wallSourceAreasJts = wallSourceAreasJts.union(parser.read(wallGeo));
-    }
-  }
+  // Add floor area as it might extend the simulated area created by buffering rooms.
   const levelArea = features.find(
     (f) => isOnCurrentLevel(f) && f.get('indoor') === 'level'
   );
@@ -427,6 +433,44 @@ function rerenderLevel() {
       parser.read(levelArea.getGeometry())
     );
   }
+  // Cut away walkable areas to go from slab area to wall area.
+  // Negative buffer to simulate inner walls between rooms.
+  const wallSourceAreasSeparate = wallSourceAreas.getPolygons().map((poly) => ({
+    poly,
+    area: poly.getArea(),
+  }));
+  // Simulate inner walls, starting from bigger area.
+  wallSourceAreasSeparate.sort((a, b) => b.area - a.area);
+  for (const walledArea of wallSourceAreasSeparate) {
+    const walledAreaJts = parser.read(walledArea.poly);
+    // Add innerwall.
+    wallSourceAreasJts = wallSourceAreasJts.union(
+      jsts.operation.buffer.BufferOp.bufferOp(
+        walledAreaJts,
+        innerWallWidth / 2,
+        new jsts.operation.buffer.BufferParameters(
+          8,
+          jsts.operation.buffer.BufferParameters.CAP_FLAT,
+          jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+          5
+        )
+      )
+    );
+    // Remove walkable area.
+    wallSourceAreasJts = wallSourceAreasJts.difference(
+      jsts.operation.buffer.BufferOp.bufferOp(
+        walledAreaJts,
+        -innerWallWidth / 2,
+        new jsts.operation.buffer.BufferParameters(
+          8,
+          jsts.operation.buffer.BufferParameters.CAP_FLAT,
+          jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+          5
+        )
+      )
+    );
+  }
+  /*
   wallSourceAreasJts = wallSourceAreasJts.difference(
     jsts.operation.buffer.BufferOp.bufferOp(
       parser.read(wallSourceAreas),
@@ -438,11 +482,36 @@ function rerenderLevel() {
         5
       )
     )
-  );
+  );*/
+  // Add explitly drawn walls.
+  for (const wall of features.filter(
+    (f) => isOnCurrentLevel(f) && f.get('indoor') === 'wall'
+  )) {
+    const wallGeo = wall.getGeometry();
+    if (wallGeo instanceof Polygon || wallGeo instanceof MultiPolygon) {
+      wallSourceAreasJts = wallSourceAreasJts.union(parser.read(wallGeo));
+    } else if (
+      wallGeo instanceof LineString ||
+      wallGeo instanceof MultiLineString
+    ) {
+      const wallWithThickness = jsts.operation.buffer.BufferOp.bufferOp(
+        parser.read(wallGeo),
+        innerWallWidth / 2,
+        new jsts.operation.buffer.BufferParameters(
+          8,
+          jsts.operation.buffer.BufferParameters.CAP_SQUARE,
+          jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+          5
+        )
+      );
+      wallSourceAreasJts = wallSourceAreasJts.union(wallWithThickness);
+    }
+  }
+  // Cut door openings in wall area.
   wallSourceAreasJts = wallSourceAreasJts.difference(doorBuffersJts);
 
   const wall = new Feature(parser.write(wallSourceAreasJts));
-  wall.set('wall', 'yes');
+  wall.set('generated-wall', 'yes');
 
   source.clear();
   source.addFeatures(features.filter(isOnCurrentLevel).concat(wall));
