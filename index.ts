@@ -4,7 +4,7 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import './style.css';
 
-import * as sample from './samples/wurzach.json';
+import * as sample from './samples/rapperswil.json';
 import GeoJSON from 'ol/format/GeoJSON';
 import {
   LineString,
@@ -153,6 +153,9 @@ const stairsStyle = [
   stairsUpArrowhead,*/ stairsIconStyle,
 ];
 
+const elevatorIconUri =
+  'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDYuMzUgNi4zNSI+PGcgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMCAtMjkwLjY1KSI+PHJlY3Qgc3R5bGU9Im9wYWNpdHk6MTtmaWxsOiNmZmY7ZmlsbC1vcGFjaXR5OjE7c3Ryb2tlOiNhOWE5YTk7c3Ryb2tlLXdpZHRoOi4yNjQ1ODMzMjtzdHJva2UtbGluZWNhcDpidXR0O3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2UtbWl0ZXJsaW1pdDo0O3N0cm9rZS1kYXNoYXJyYXk6bm9uZTtzdHJva2UtZGFzaG9mZnNldDowO3N0cm9rZS1vcGFjaXR5OjEiIHdpZHRoPSI2LjA4NSIgaGVpZ2h0PSI2LjA4NSIgeD0iLjEzMiIgeT0iMjkwLjc4MiIgcnk9IjAiLz48ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxLjgxOCAtLjMzOCkiPjxyZWN0IHN0eWxlPSJvcGFjaXR5OjE7ZmlsbDojMDAwO2ZpbGwtb3BhY2l0eToxO3N0cm9rZTojMDAwO3N0cm9rZS13aWR0aDouNTI5MTY2NztzdHJva2UtbGluZWNhcDpidXR0O3N0cm9rZS1saW5lam9pbjptaXRlcjtzdHJva2UtbWl0ZXJsaW1pdDo0O3N0cm9rZS1kYXNoYXJyYXk6bm9uZTtzdHJva2UtZGFzaG9mZnNldDowO3N0cm9rZS1vcGFjaXR5OjEiIHdpZHRoPSIxLjMyMyIgaGVpZ2h0PSIxLjMyMyIgeD0iMjA5LjY4OSIgeT0iMjA1LjI2OCIgcnk9IjAiIHRyYW5zZm9ybT0icm90YXRlKDQ1KSIvPjxwYXRoIHN0eWxlPSJvcGFjaXR5OjE7ZmlsbDojZmZmO2ZpbGwtb3BhY2l0eToxO3N0cm9rZTpub25lO3N0cm9rZS13aWR0aDouNTI5MTY2NjQ7c3Ryb2tlLWxpbmVjYXA6YnV0dDtzdHJva2UtbGluZWpvaW46cm91bmQ7c3Ryb2tlLW1pdGVybGltaXQ6NDtzdHJva2UtZGFzaGFycmF5Om5vbmU7c3Ryb2tlLWRhc2hvZmZzZXQ6MDtzdHJva2Utb3BhY2l0eToxIiBkPSJNMi4xNSAyOTQuMDloMi4zODF2LjUyOUgyLjE1eiIvPjwvZz48cGF0aCBzdHlsZT0ib3BhY2l0eToxO2ZpbGw6IzAwMDtmaWxsLW9wYWNpdHk6MTtzdHJva2U6bm9uZTtzdHJva2Utd2lkdGg6LjUyOTE2NjY0O3N0cm9rZS1saW5lY2FwOmJ1dHQ7c3Ryb2tlLWxpbmVqb2luOm1pdGVyO3N0cm9rZS1taXRlcmxpbWl0OjQ7c3Ryb2tlLWRhc2hhcnJheTpub25lO3N0cm9rZS1kYXNob2Zmc2V0OjA7c3Ryb2tlLW9wYWNpdHk6MSIgZD0iTTIuOTEgMjkzLjk3MWguNTI5di43OTRIMi45MXoiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDEuOCAtLjM1KSIvPjxyZWN0IHN0eWxlPSJvcGFjaXR5OjE7ZmlsbDpub25lO2ZpbGwtb3BhY2l0eToxO3N0cm9rZTojMDAwO3N0cm9rZS13aWR0aDouNTI5MTY2NztzdHJva2UtbGluZWNhcDpidXR0O3N0cm9rZS1saW5lam9pbjpyb3VuZDtzdHJva2UtbWl0ZXJsaW1pdDo0O3N0cm9rZS1kYXNoYXJyYXk6bm9uZTtzdHJva2UtZGFzaG9mZnNldDowO3N0cm9rZS1vcGFjaXR5OjEiIHdpZHRoPSIyLjY0NiIgaGVpZ2h0PSI0LjIzMyIgeD0iMS4wNTgiIHk9IjI5MS45NzMiIHJ4PSIuNTI5IiByeT0iLjUyOSIvPjxwYXRoIHN0eWxlPSJvcGFjaXR5OjE7ZmlsbDojMDAwO2ZpbGwtb3BhY2l0eToxO3N0cm9rZTpub25lO3N0cm9rZS13aWR0aDouNTI5MTY2NjQ7c3Ryb2tlLWxpbmVjYXA6YnV0dDtzdHJva2UtbGluZWpvaW46bWl0ZXI7c3Ryb2tlLW1pdGVybGltaXQ6NDtzdHJva2UtZGFzaGFycmF5Om5vbmU7c3Ryb2tlLWRhc2hvZmZzZXQ6MDtzdHJva2Utb3BhY2l0eToxIiBkPSJNMi4xMTcgMjkxLjIxNGguNTI5di43OTRoLS41Mjl6Ii8+PHBhdGggc3R5bGU9Im9wYWNpdHk6MTtmaWxsOiNhOWE5YTk7ZmlsbC1vcGFjaXR5OjE7c3Ryb2tlOm5vbmU7c3Ryb2tlLXdpZHRoOi41MjkxNjY2NDtzdHJva2UtbGluZWNhcDpidXR0O3N0cm9rZS1saW5lam9pbjptaXRlcjtzdHJva2UtbWl0ZXJsaW1pdDo0O3N0cm9rZS1kYXNoYXJyYXk6bm9uZTtzdHJva2UtZGFzaG9mZnNldDowO3N0cm9rZS1vcGFjaXR5OjEiIGQ9Ik02LjA4NSAyOTAuNjVoLjI2NVYyOTdoLS4yNjV6Ii8+PC9nPjwvc3ZnPg==';
+
 map.addLayer(
   new VectorLayer({
     source,
@@ -197,16 +200,10 @@ map.addLayer(
           ['stairs', 'corridor', 'lobby', 'hall', 'elevator'].includes(
             f.get('room')
           ) ||
-          f.get('stairs') === 'yes'
+          f.get('stairs') === 'yes' ||
+          f.get('highway') === 'elevator'
         ) {
           roomStyle.getFill().setColor('#dfc');
-          /*if (
-            (f.get('room') === 'stairs' || f.get('stairs') === 'yes') &&
-            map.getView().getResolution() < 0.4
-          ) {
-            roomIconStyle.setImage(stairsIcon);
-            return [roomStyle, roomIconStyle];
-          }*/
           return roomStyle;
         }
         if (['toilet', 'toilets'].includes(f.get('room'))) {
@@ -314,12 +311,25 @@ map.addLayer(
         ref.append(reference);
         label.append(ref);
       }
-      if (
-        (f.get('room') === 'stairs' || f.get('stairs') === 'yes') &&
-        map.getView().getResolution() < 0.4
-      ) {
+
+      if (label.firstElementChild) {
+        const isMale = f.get('male') === 'yes';
+        const isFemale = f.get('female') === 'yes';
+        if (isMale && !isFemale) {
+          label.firstElementChild.prepend('🚹 ');
+        } else if (!isMale && isFemale) {
+          label.firstElementChild.prepend('🚺 ');
+        } else if (f.get('unisex') === 'yes' || (isMale && isFemale)) {
+          label.firstElementChild.prepend('🚻 ');
+        }
+      }
+
+      const isStairs = f.get('room') === 'stairs' || f.get('stairs') === 'yes';
+      const isElevator =
+        f.get('room') === 'elevator' || f.get('highway') === 'elevator';
+      if ((isStairs || isElevator) && map.getView().getResolution() < 0.4) {
         const icon = document.createElement('img');
-        icon.src = stairsIcon.getSrc();
+        icon.src = isStairs ? stairsIcon.getSrc() : elevatorIconUri;
         if (label.firstElementChild) {
           icon.style.marginRight = '0.5ex';
           icon.style.verticalAlign = 'middle';

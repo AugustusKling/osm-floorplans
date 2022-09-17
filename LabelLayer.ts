@@ -167,17 +167,18 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       apply(transform, screenGeometryCenter);
 
       const labelParams = cached.labels[resolutionCacheKey];
-      const envelope = this.tryOccupy(screenGeometryCenter, labelParams);
-      if (envelope) {
-        const labelDiv =
-          world === 0
-            ? labelParams.div
-            : (labelParams.div.cloneNode(true) as HTMLDivElement);
-        labelDiv.style.left = `${envelope.getMinX()}px`;
-        labelDiv.style.top = `${envelope.getMinY()}px`;
-        this.container.append(labelDiv);
-        return labelDiv;
-      }
+      const labelDiv =
+        world === 0
+          ? labelParams.div
+          : (labelParams.div.cloneNode(true) as HTMLDivElement);
+      labelDiv.style.left = `${
+        screenGeometryCenter[0] - labelParams.width / 2
+      }px`;
+      labelDiv.style.top = `${
+        screenGeometryCenter[1] - labelParams.height / 2
+      }px`;
+      this.container.append(labelDiv);
+      return labelDiv;
     }
 
     const geometry = feature.getGeometry();
