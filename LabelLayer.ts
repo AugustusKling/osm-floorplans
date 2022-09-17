@@ -21,7 +21,7 @@ import {
   toUserExtent,
 } from 'ol/proj';
 import LayerRenderer from 'ol/renderer/Layer';
-import { getSquaredTolerance } from 'ol/renderer/vector';
+import { defaultOrder, getSquaredTolerance } from 'ol/renderer/vector';
 import VectorSource from 'ol/source/Vector';
 import { apply, compose, create, Transform } from 'ol/transform';
 import ViewHint from 'ol/ViewHint';
@@ -49,17 +49,43 @@ export class LabelLayer extends Layer<VectorSource> {
   createRenderer = (): LayerRenderer<LabelLayer> => {
     return new LabelRenderer(this);
   };
+
+  public renderOrder = (f1: Feature, f2: Feature) => {
+    const g1 = f1.getGeometry();
+    const g1Area = g1 instanceof Polygon || g1 instanceof MultiPolygon;
+    const g2 = f2.getGeometry();
+    const g2Area = g2 instanceof Polygon || g2 instanceof MultiPolygon;
+    if (g1Area && !g2Area) {
+      return -1;
+    }
+    if (g2Area && !g1Area) {
+      return 1;
+    }
+    // Draw smaller areas last.
+    if (g1Area && g2Area) {
+      return g2.getArea() - g1.getArea();
+    }
+
+    return defaultOrder(f1, f2);
+  };
 }
+
+type LabelParam = {
+  /** Label box containing multiple text boxes and possibly whitespace around. */
+  div: HTMLDivElement;
+  /** Text boxes, relative to inacessibility pole in screen coordinates. */
+  shape: jsts.geom.Geometry;
+  /** Width of label box. */
+  width: number;
+  /** Height of label box. */
+  height: number;
+};
 
 type CacheEntry = {
   featureRevision: number;
   geometryRevision: number;
   inacessibilityPole: [number, number];
-  labels: {
-    div: HTMLDivElement;
-    width: number;
-    height: number;
-  }[];
+  labels: LabelParam[];
 };
 
 class LabelRenderer extends LayerRenderer<LabelLayer> {
@@ -69,6 +95,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   private parser = new jsts.io.OL3Parser();
   private geoJson = new GeoJSON();
   private cache = new WeakMap<Feature, CacheEntry>();
+  private occupiedSpace: jsts.geom.Geometry = new jsts.geom.MultiPolygon([]);
 
   constructor(layer: LabelLayer) {
     super(layer);
@@ -136,14 +163,13 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         world === 0
           ? labelParams.div
           : (labelParams.div.cloneNode(true) as HTMLDivElement);
-      labelDiv.style.left = `${
-        screenGeometryCenter[0] - labelParams.width / 2
-      }px`;
-      labelDiv.style.top = `${
-        screenGeometryCenter[1] - labelParams.height / 2
-      }px`;
-      this.container.append(labelDiv);
-      return labelDiv;
+      const envelope = this.tryOccupy(screenGeometryCenter, labelParams);
+      if (envelope) {
+        labelDiv.style.left = `${envelope.getMinX()}px`;
+        labelDiv.style.top = `${envelope.getMinY()}px`;
+        this.container.append(labelDiv);
+        return labelDiv;
+      }
     }
 
     const geometry = feature.getGeometry();
@@ -236,10 +262,20 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
               ? rects.reduce((prev, current) => prev.union(current))
               : undefined;
 
-          if (allRects && screenGeometryJts.contains(allRects)) {
+          if (
+            allRects &&
+            screenGeometryJts.contains(allRects) &&
+            !this.occupiedSpace.intersects(allRects)
+          ) {
             //Found okay
+            const shiftToGeometryCenter =
+              new jsts.geom.util.AffineTransformation().translate(
+                -screenGeometryCenter[0],
+                -screenGeometryCenter[1]
+              );
             cached.labels[resolutionCacheKey] = {
               div: label,
+              shape: shiftToGeometryCenter.transform(allRects),
               width: maxWidth,
               height: rangeRect.getHeight(),
             };
@@ -256,14 +292,12 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           label.style.width = `${maxWidth}px`;
         }
         range.detach();
-        if (cached.labels[resolutionCacheKey]) {
-          const labelParams = cached.labels[resolutionCacheKey];
-          label.style.left = `${
-            screenGeometryCenter[0] - labelParams.width / 2
-          }px`;
-          label.style.top = `${
-            screenGeometryCenter[1] - labelParams.height / 2
-          }px`;
+        const labelParams = cached.labels[resolutionCacheKey];
+        const envelope =
+          labelParams && this.tryOccupy(screenGeometryCenter, labelParams);
+        if (envelope) {
+          label.style.left = `${envelope.getMinX()}px`;
+          label.style.top = `${envelope.getMinY()}px`;
           return label;
         } else {
           this.container.removeChild(label);
@@ -271,6 +305,25 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       }
     }
   };
+
+  private tryOccupy(
+    center: Coordinate,
+    labelParams: LabelParam
+  ): jsts.geom.Envelope {
+    const envelope = new jsts.geom.Envelope(
+      center[0] - labelParams.width / 2,
+      center[0] + labelParams.width / 2,
+      center[1] - labelParams.height / 2,
+      center[1] + labelParams.height / 2
+    );
+    const shiftToGeometryCenter =
+      new jsts.geom.util.AffineTransformation().translate(center[0], center[1]);
+    const labelGeom = shiftToGeometryCenter.transform(labelParams.shape);
+    if (!this.occupiedSpace.intersects(labelGeom)) {
+      this.occupiedSpace = this.occupiedSpace.union(labelGeom);
+      return envelope;
+    }
+  }
 
   private getRects(element: HTMLElement, range: Range): DOMRect[] {
     const rects: DOMRect[] = [];
@@ -291,6 +344,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       frameState.viewState.projection
     );
     this.features = this.getLayer().getSource().getFeaturesInExtent(userExtent);
+    this.features.sort(this.getLayer().renderOrder);
     if (this.features.length === 0) {
       this.container.innerHTML = '';
       return false;
@@ -305,6 +359,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     } else {
       const labels = this.renderWorlds(frameState);
       this.container.replaceChildren(...labels);
+      this.occupiedSpace = new jsts.geom.MultiPolygon([]);
     }
     return this.container;
   };
