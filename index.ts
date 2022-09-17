@@ -4,7 +4,7 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import './style.css';
 
-import * as sample from './samples/rapperswil.json';
+import * as sample from './samples/wurzach.json';
 import GeoJSON from 'ol/format/GeoJSON';
 import {
   LineString,
@@ -200,13 +200,13 @@ map.addLayer(
           f.get('stairs') === 'yes'
         ) {
           roomStyle.getFill().setColor('#dfc');
-          if (
+          /*if (
             (f.get('room') === 'stairs' || f.get('stairs') === 'yes') &&
             map.getView().getResolution() < 0.4
           ) {
             roomIconStyle.setImage(stairsIcon);
             return [roomStyle, roomIconStyle];
-          }
+          }*/
           return roomStyle;
         }
         if (['toilet', 'toilets'].includes(f.get('room'))) {
@@ -299,7 +299,7 @@ map.addLayer(
     labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';
       const name = f.get('name');
-      if (variant !== 'ref-only' && name) {
+      if (variant === 'default' && name) {
         const title = document.createElement('p');
         title.style.font = 'bold 12px sans-serif';
         title.style.margin = '0';
@@ -307,15 +307,37 @@ map.addLayer(
         label.append(title);
       }
       const reference = f.get('ref');
-      if (reference) {
+      if (['default', 'ref-only'].includes(variant) && reference) {
         const ref = document.createElement('p');
         ref.style.font = '12px sans-serif';
         ref.style.margin = '0';
         ref.append(reference);
         label.append(ref);
       }
-      if (variant !== 'ref-only' && reference) {
-        return 'ref-only';
+      if (
+        (f.get('room') === 'stairs' || f.get('stairs') === 'yes') &&
+        map.getView().getResolution() < 0.4
+      ) {
+        const icon = document.createElement('img');
+        icon.src = stairsIcon.getSrc();
+        if (label.firstElementChild) {
+          icon.style.marginRight = '0.5ex';
+          icon.style.verticalAlign = 'middle';
+          label.firstElementChild.prepend(icon);
+        } else {
+          label.prepend(icon);
+        }
+        if (variant === 'icon-only') {
+          return { allowExtendingGeometry: true };
+        } else {
+          return {
+            allowExtendingGeometry: false,
+            fallbackVariant: 'icon-only',
+          };
+        }
+      }
+      if (variant === 'default' && reference) {
+        return { fallbackVariant: 'ref-only' };
       }
     },
   })

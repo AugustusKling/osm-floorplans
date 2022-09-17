@@ -28,11 +28,14 @@ import ViewHint from 'ol/ViewHint';
 import polylabel from 'polylabel';
 
 type LabelProvider = (
+  /** Feature to be labelled. */
   feature: Feature,
+  /** Label box to be filled. */
   label: HTMLDivElement,
+  /** 'default' followed by fallback variant name from previous calls. */
   variant: string,
   frameState: FrameState
-) => string | void;
+) => LabelPlacementOptions | void;
 
 export class LabelLayer extends Layer<VectorSource> {
   private labelProvider: LabelProvider;
@@ -86,6 +89,11 @@ type CacheEntry = {
   geometryRevision: number;
   inacessibilityPole: [number, number];
   labels: LabelParam[];
+};
+
+type LabelPlacementOptions = {
+  fallbackVariant?: string;
+  allowExtendingGeometry?: boolean;
 };
 
 class LabelRenderer extends LayerRenderer<LabelLayer> {
@@ -159,12 +167,12 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       apply(transform, screenGeometryCenter);
 
       const labelParams = cached.labels[resolutionCacheKey];
-      const labelDiv =
-        world === 0
-          ? labelParams.div
-          : (labelParams.div.cloneNode(true) as HTMLDivElement);
       const envelope = this.tryOccupy(screenGeometryCenter, labelParams);
       if (envelope) {
+        const labelDiv =
+          world === 0
+            ? labelParams.div
+            : (labelParams.div.cloneNode(true) as HTMLDivElement);
         labelDiv.style.left = `${envelope.getMinX()}px`;
         labelDiv.style.top = `${envelope.getMinY()}px`;
         this.container.append(labelDiv);
@@ -199,12 +207,16 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       while (variant) {
         label.style.width = `${maxWidth}px`;
         label.innerHTML = '';
-        variant = this.getLayer().getLabelProvider()(
+        const placementOptions = this.getLayer().getLabelProvider()(
           feature,
           label,
           variant,
           frameState
         );
+        variant = placementOptions ? placementOptions.fallbackVariant : null;
+        const allowExtendingGeometry = placementOptions
+          ? placementOptions.allowExtendingGeometry
+          : false;
 
         if (label.childNodes.length === 0) {
           // Abort rendering, no label contents.
@@ -213,7 +225,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         }
         this.container.append(label);
 
-        if (label.scrollWidth > maxWidth) {
+        if (!allowExtendingGeometry && label.scrollWidth > maxWidth) {
           // No valid label placement.
           cached.labels[resolutionCacheKey] = null;
           this.container.removeChild(label);
@@ -239,9 +251,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             rangeRect.expandToInclude(r.right, r.bottom);
           }
           if (
-            label.scrollWidth - 2 > maxWidth ||
-            rangeRect.getWidth() === 0 ||
-            rangeRect.getHeight() > getHeight(screenGeometry.getExtent())
+            !allowExtendingGeometry &&
+            (label.scrollWidth - 2 > maxWidth ||
+              rangeRect.getWidth() === 0 ||
+              rangeRect.getHeight() > getHeight(screenGeometry.getExtent()))
           ) {
             // No valid label placement.
             cached.labels[resolutionCacheKey] = null;
@@ -263,9 +276,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
               : undefined;
 
           if (
-            allRects &&
-            screenGeometryJts.contains(allRects) &&
-            !this.occupiedSpace.intersects(allRects)
+            allowExtendingGeometry ||
+            (allRects &&
+              screenGeometryJts.contains(allRects) &&
+              !this.occupiedSpace.intersects(allRects))
           ) {
             //Found okay
             const shiftToGeometryCenter =
@@ -331,6 +345,8 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       if (child instanceof Text) {
         range.selectNodeContents(child);
         rects.push(...range.getClientRects());
+      } else if (child instanceof HTMLImageElement) {
+        rects.push(child.getBoundingClientRect());
       } else if (child instanceof HTMLElement) {
         rects.push(...this.getRects(child, range));
       }
