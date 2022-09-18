@@ -1,6 +1,7 @@
 import { Feature } from 'ol';
 import { Coordinate } from 'ol/coordinate';
 import { getHeight, getWidth } from 'ol/extent';
+import { FeatureLike } from 'ol/Feature';
 import { GeoJSON } from 'ol/format';
 import {
   LineString,
@@ -39,15 +40,18 @@ type LabelProvider = (
 
 export class LabelLayer extends Layer<VectorSource> {
   private labelProvider: LabelProvider;
+  private filter: (f:FeatureLike)=> boolean;
 
   public constructor(
-    options: Options<VectorSource> & { labelProvider: LabelProvider }
+    options: Options<VectorSource> & { labelProvider: LabelProvider; filter?:(f:FeatureLike)=> boolean; }
   ) {
     super(options);
     this.labelProvider = options.labelProvider;
+    this.filter = options.filter || (() => true);
   }
 
   public getLabelProvider = (): LabelProvider => this.labelProvider;
+  public getFilter = ():(f:FeatureLike)=> boolean => this.filter;
 
   createRenderer = (): LayerRenderer<LabelLayer> => {
     return new LabelRenderer(this);
@@ -360,7 +364,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       frameState.extent,
       frameState.viewState.projection
     );
-    this.features = this.getLayer().getSource().getFeaturesInExtent(userExtent);
+    this.features = this.getLayer().getSource().getFeaturesInExtent(userExtent).filter(f => this.getLayer().getFilter()(f));
     this.features.sort(this.getLayer().renderOrder);
     if (this.features.length === 0) {
       this.container.innerHTML = '';
