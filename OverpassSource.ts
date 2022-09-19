@@ -5,7 +5,7 @@ import VectorSource, { Options } from 'ol/source/Vector';
 import osmtogeojson from 'osmtogeojson';
 
 export class OverpassSource extends VectorSource {
-  private maxRequests = 50;
+  private concurrentRequests = 0;
   private queryTemplate = `[out:json][timeout:25];
   // gather results
   (
@@ -37,9 +37,10 @@ export class OverpassSource extends VectorSource {
     success,
     failure
   ): Promise<void> => {
-    this.maxRequests = this.maxRequests - 1;
-    if (this.maxRequests <= 0) {
+    if (this.concurrentRequests > 30) {
       throw new Error('Too many Overpass requests.');
+    } else {
+      this.concurrentRequests = this.concurrentRequests + 1;
     }
 
     const epsg4326Extent = transformExtent(extent, projection, 'EPSG:4326');
@@ -60,6 +61,7 @@ export class OverpassSource extends VectorSource {
         data: query,
       }),
     });
+    this.concurrentRequests = this.concurrentRequests - 1;
     try {
       const responseBody = await response.json();
       const geoJson = osmtogeojson(responseBody, {
