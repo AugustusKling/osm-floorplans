@@ -116,7 +116,7 @@ map.addLayer(
     style: null,
   })
 );
-map.addLayer(
+/*map.addLayer(
   new TileLayer({
     source: new TileDebug({
       tileGrid: createXYZ({
@@ -126,7 +126,7 @@ map.addLayer(
       }),
     }),
   })
-);
+);*/
 
 const roomStyle = new Style({
   fill: new Fill({
@@ -332,6 +332,7 @@ map.addLayer(
 map.addLayer(
   new LabelLayer({
     source,
+    minZoom: 14,
     filter: isOnCurrentLevel,
     labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';

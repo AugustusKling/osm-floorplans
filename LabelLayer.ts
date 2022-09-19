@@ -40,10 +40,13 @@ type LabelProvider = (
 
 export class LabelLayer extends Layer<VectorSource> {
   private labelProvider: LabelProvider;
-  private filter: (f:FeatureLike)=> boolean;
+  private filter: (f: FeatureLike) => boolean;
 
   public constructor(
-    options: Options<VectorSource> & { labelProvider: LabelProvider; filter?:(f:FeatureLike)=> boolean; }
+    options: Options<VectorSource> & {
+      labelProvider: LabelProvider;
+      filter?: (f: FeatureLike) => boolean;
+    }
   ) {
     super(options);
     this.labelProvider = options.labelProvider;
@@ -51,7 +54,7 @@ export class LabelLayer extends Layer<VectorSource> {
   }
 
   public getLabelProvider = (): LabelProvider => this.labelProvider;
-  public getFilter = ():(f:FeatureLike)=> boolean => this.filter;
+  public getFilter = (): ((f: FeatureLike) => boolean) => this.filter;
 
   createRenderer = (): LayerRenderer<LabelLayer> => {
     return new LabelRenderer(this);
@@ -186,10 +189,6 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     }
 
     const geometry = feature.getGeometry();
-    const squaredTolerance = getSquaredTolerance(
-      frameState.viewState.resolution,
-      frameState.pixelRatio
-    );
     const userProjection = getUserProjection();
     const userTransform = userProjection
       ? getTransformFromProjections(
@@ -204,9 +203,14 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       return transform2D(coords, 0, coords.length, dim, transform, dest);
     });
     if (screenGeometry instanceof Polygon) {
+      let maxWidth = Math.floor(getWidth(screenGeometry.getExtent()));
+      if (maxWidth < 30) {
+        // Arbitry minimum size not reached.
+        cached.labels[resolutionCacheKey] = null;
+        return;
+      }
       const label = document.createElement('div');
       label.style.position = 'absolute';
-      let maxWidth = Math.floor(getWidth(screenGeometry.getExtent()));
 
       let variant: string | void = 'default';
       while (variant) {
@@ -364,7 +368,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       frameState.extent,
       frameState.viewState.projection
     );
-    this.features = this.getLayer().getSource().getFeaturesInExtent(userExtent).filter(f => this.getLayer().getFilter()(f));
+    this.features = this.getLayer()
+      .getSource()
+      .getFeaturesInExtent(userExtent)
+      .filter((f) => this.getLayer().getFilter()(f));
     this.features.sort(this.getLayer().renderOrder);
     if (this.features.length === 0) {
       this.container.innerHTML = '';
