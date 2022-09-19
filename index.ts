@@ -333,7 +333,7 @@ map.addLayer(
   new LabelLayer({
     source,
     minZoom: 14,
-    filter: isOnCurrentLevel,
+    filter: (f) => f.get('indoor') !== 'level' && isOnCurrentLevel(f),
     labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';
       const name = f.get('name');
