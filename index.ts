@@ -4,8 +4,6 @@ import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import './style.css';
 
-import * as sample from './samples/arolsen.json';
-import GeoJSON from 'ol/format/GeoJSON';
 import {
   LineString,
   LinearRing,
@@ -17,7 +15,7 @@ import {
 } from 'ol/geom';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource, { VectorSourceEvent } from 'ol/source/Vector';
-import { Fill, RegularShape, Stroke, Style, Text, Icon } from 'ol/style';
+import { Fill, RegularShape, Stroke, Style, Icon } from 'ol/style';
 import { LabelLayer } from './LabelLayer';
 import { defaultOrder } from 'ol/renderer/vector';
 import { OverpassSource } from './OverpassSource';
@@ -42,24 +40,6 @@ const map = new Map({
   }),
 });
 
-const format = new GeoJSON({
-  featureProjection: 'EPSG:3857',
-  dataProjection: 'EPSG:4326',
-});
-const features = format.readFeatures(sample);
-
-const presentLevels: number[] = Array.from(
-  new Set(
-    features.flatMap((f) => {
-      const level = parseLevel(f);
-      if (level) {
-        return level.flatMap((l) => [l.from, l.to]);
-      } else {
-        return [];
-      }
-    })
-  )
-).sort((a, b) => a - b);
 let currentLevel = 0;
 function isOnCurrentLevel(f: FeatureLike) {
   const level = parseLevel(f);
@@ -70,24 +50,6 @@ function isOnCurrentLevel(f: FeatureLike) {
         fromTo && fromTo.from <= currentLevel && fromTo.to >= currentLevel
     )
   );
-}
-const levelPicker = document.getElementById('levelPicker');
-for (const level of presentLevels) {
-  const button = document.createElement('button');
-  button.innerText = String(level);
-  button.dataset.floorLevel = String(level);
-  button.onclick = () => {
-    Array.from(levelPicker.children).forEach((b) =>
-      (b as HTMLElement).classList.remove('active')
-    );
-    currentLevel = level;
-    map
-      .getAllLayers()
-      .filter((l) => l.getSource() instanceof VectorSource)
-      .forEach((l) => l.changed());
-    rerenderLevel();
-  };
-  levelPicker.append(button);
 }
 
 const source = new BuildingTopologySource();
@@ -127,6 +89,51 @@ map.addLayer(
     }),
   })
 );*/
+
+const levelPicker = document.getElementById('levelPicker');
+let levelPickerUpdateTimer: number;
+const updateLevelPickerAsync = () => {
+  clearTimeout(levelPickerUpdateTimer);
+  levelPickerUpdateTimer = setTimeout(() => {
+    const viewExtent = map.getView().calculateExtent();
+    const features = source.getFeaturesInExtent(viewExtent);
+    const presentLevels: number[] = Array.from(
+      new Set(
+        features.flatMap((f) => {
+          const level = parseLevel(f);
+          if (level) {
+            return level.flatMap((l) => [l.from, l.to]);
+          } else {
+            return [];
+          }
+        })
+      )
+    ).sort((a, b) => a - b);
+    levelPicker.replaceChildren([]);
+    for (const level of presentLevels) {
+      const button = document.createElement('button');
+      button.innerText = String(level);
+      button.dataset.floorLevel = String(level);
+      if (level === currentLevel) {
+        button.classList.add('active');
+      }
+      button.onclick = () => {
+        Array.from(levelPicker.children).forEach((b) =>
+          (b as HTMLElement).classList.remove('active')
+        );
+        currentLevel = level;
+        map
+          .getAllLayers()
+          .filter((l) => l.getSource() instanceof VectorSource)
+          .forEach((l) => l.changed());
+        rerenderLevel();
+      };
+      levelPicker.append(button);
+    }
+  }, 500);
+};
+map.getView().addEventListener('change', updateLevelPickerAsync);
+source.addEventListener('change', updateLevelPickerAsync);
 
 const roomStyle = new Style({
   fill: new Fill({
