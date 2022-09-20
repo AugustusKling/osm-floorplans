@@ -96,7 +96,7 @@ const updateLevelPickerAsync = () => {
   clearTimeout(levelPickerUpdateTimer);
   levelPickerUpdateTimer = setTimeout(() => {
     const viewExtent = map.getView().calculateExtent();
-    const features = source.getFeaturesInExtent(viewExtent);
+    const features = source.getFeaturesInExtent(viewExtent).filter(f => f.get('generated-wall')==='yes');
     const presentLevels: number[] = Array.from(
       new Set(
         features.flatMap((f) => {

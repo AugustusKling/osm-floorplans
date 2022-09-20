@@ -55,12 +55,15 @@ export class OverpassSource extends VectorSource {
         ',' +
         Math.min(epsg4326Extent[2], 180)
     );
-    const response = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: new URLSearchParams({
-        data: query,
-      }),
-    });
+    const response = await fetch(
+      'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+      {
+        method: 'POST',
+        body: new URLSearchParams({
+          data: query,
+        }),
+      }
+    );
     this.concurrentRequests = this.concurrentRequests - 1;
     try {
       const responseBody = await response.json();
