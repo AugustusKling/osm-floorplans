@@ -61,129 +61,122 @@ class Level {
     this.wallRebuildRequired = true;
   };
 
-  rebuildWall = (): Feature => {
+  rebuildWall = (): void => {
     if (!this.wallRebuildRequired) {
-      return this.wall;
-    } else {
-      /** Outline of walls that could have door openings. */
-      const wallLines = new MultiLineString([]);
-      /** Walled, passable areas. Basically rooms of any type. */
-      const wallSourceAreas = new MultiPolygon([]);
-      for (const room of this.features.filter((f) =>
-        ['room', 'corridor'].includes(f.get('indoor'))
-      )) {
-        const roomGeo = room.getGeometry();
-        const polys: Polygon[] = [];
-        if (roomGeo instanceof Polygon) {
-          polys.push(roomGeo);
-        } else if (roomGeo instanceof MultiPolygon) {
-          polys.push(...roomGeo.getPolygons());
-        }
-        for (const poly of polys) {
-          wallSourceAreas.appendPolygon(poly);
-        }
-        for (const ring of polys.flatMap((p) => p.getLinearRings())) {
-          wallLines.appendLineString(new LineString(ring.getCoordinates()));
-        }
+      return;
+    }
+
+    /** Outline of walls that could have door openings. */
+    const wallLines = new MultiLineString([]);
+    /** Walled, passable areas. Basically rooms of any type. */
+    const wallSourceAreas = new MultiPolygon([]);
+    for (const room of this.features.filter((f) =>
+      ['room', 'corridor'].includes(f.get('indoor'))
+    )) {
+      const roomGeo = room.getGeometry();
+      const polys: Polygon[] = [];
+      if (roomGeo instanceof Polygon) {
+        polys.push(roomGeo);
+      } else if (roomGeo instanceof MultiPolygon) {
+        polys.push(...roomGeo.getPolygons());
       }
-      for (const wall of this.features.filter(
-        (f) => f.get('indoor') === 'wall'
-      )) {
-        const wallGeo = wall.getGeometry();
-        if (wallGeo instanceof LineString) {
-          wallLines.appendLineString(wallGeo);
-        }
+      for (const poly of polys) {
+        wallSourceAreas.appendPolygon(poly);
       }
-
-      const parser = new jsts.io.OL3Parser();
-      parser.inject(
-        Point,
-        LineString,
-        LinearRing,
-        Polygon,
-        MultiPoint,
-        MultiLineString,
-        MultiPolygon
-      );
-
-      let wallLinesJts = parser.read(wallLines);
-
-      let doorCirclesJts = parser.read(new MultiPolygon([]));
-      for (const door of this.features.filter(
-        (f) => f.get('door') === 'yes' || f.get('indoor') === 'door'
-      )) {
-        const doorGeo = door.getGeometry();
-        const width = parseFloat(door.get('width'));
-        const doorWidth = !isNaN(width) ? width : 1.2;
-        doorCirclesJts = doorCirclesJts.union(
-          parser.read(doorGeo).buffer(doorWidth / 2 - 0.5)
-        );
+      for (const ring of polys.flatMap((p) => p.getLinearRings())) {
+        wallLines.appendLineString(new LineString(ring.getCoordinates()));
       }
-      /** Wall segments that are passable by doors. */
-      const doorLines = wallLinesJts.intersection(doorCirclesJts);
-      const doorBuffersJts = jsts.operation.buffer.BufferOp.bufferOp(
-        doorLines,
-        0.5,
-        new jsts.operation.buffer.BufferParameters(
-          8,
-          jsts.operation.buffer.BufferParameters.CAP_SQUARE,
-          jsts.operation.buffer.BufferParameters.JOIN_MITRE,
-          5
-        )
-      );
+    }
+    for (const wall of this.features.filter(
+      (f) => f.get('indoor') === 'wall'
+    )) {
+      const wallGeo = wall.getGeometry();
+      if (wallGeo instanceof LineString) {
+        wallLines.appendLineString(wallGeo);
+      }
+    }
 
-      const outerWallWidth = 0.4;
-      const innerWallWidth = 0.2;
-      // Expand walled areas to simulate thicker outer walls.
-      let wallSourceAreasJts = jsts.operation.buffer.BufferOp.bufferOp(
-        parser.read(wallSourceAreas),
-        outerWallWidth - innerWallWidth / 2,
-        new jsts.operation.buffer.BufferParameters(
-          8,
-          jsts.operation.buffer.BufferParameters.CAP_FLAT,
-          jsts.operation.buffer.BufferParameters.JOIN_MITRE,
-          5
-        )
+    const parser = new jsts.io.OL3Parser();
+    parser.inject(
+      Point,
+      LineString,
+      LinearRing,
+      Polygon,
+      MultiPoint,
+      MultiLineString,
+      MultiPolygon
+    );
+
+    let wallLinesJts = parser.read(wallLines);
+
+    const doorCirclesCollectionJts = [];
+    for (const door of this.features.filter(
+      (f) => f.get('door') || f.get('indoor') === 'door' || f.get('entrance')
+    )) {
+      const doorGeo = door.getGeometry();
+      const width = parseFloat(door.get('width'));
+      const doorWidth = !isNaN(width) ? width : 1.2;
+      doorCirclesCollectionJts.push(
+        parser.read(doorGeo).buffer(doorWidth / 2 - 0.5)
       );
-      // Add floor area as it might extend the simulated area created by buffering rooms.
-      const levelArea = this.features.find((f) => f.get('indoor') === 'level');
-      if (levelArea) {
+    }
+    const doorCirclesJts = new jsts.operation.union.UnaryUnionOp(
+      new jsts.geom.GeometryCollection(
+        doorCirclesCollectionJts,
+        new jsts.geom.GeometryFactory()
+      )
+    ).union();
+    /** Wall segments that are passable by doors. */
+    const doorLines = wallLinesJts.intersection(doorCirclesJts);
+    const doorBuffersJts = jsts.operation.buffer.BufferOp.bufferOp(
+      doorLines,
+      0.5,
+      new jsts.operation.buffer.BufferParameters(
+        8,
+        jsts.operation.buffer.BufferParameters.CAP_SQUARE,
+        jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+        5
+      )
+    );
+
+    const outerWallWidth = 0.4;
+    const innerWallWidth = 0.2;
+    // Expand walled areas to simulate thicker outer walls.
+    let wallSourceAreasJts = jsts.operation.buffer.BufferOp.bufferOp(
+      parser.read(wallSourceAreas),
+      outerWallWidth - innerWallWidth / 2,
+      new jsts.operation.buffer.BufferParameters(
+        8,
+        jsts.operation.buffer.BufferParameters.CAP_FLAT,
+        jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+        5
+      )
+    );
+    // Add floor area as it might extend the simulated area created by buffering rooms.
+    const levelArea = this.features.find((f) => f.get('indoor') === 'level');
+    if (levelArea) {
+      wallSourceAreasJts = wallSourceAreasJts.union(
+        parser.read(levelArea.getGeometry())
+      );
+    }
+    // Cut away walkable areas to go from slab area to wall area.
+    // Negative buffer to simulate inner walls between rooms.
+    const wallSourceAreasSeparate = wallSourceAreas
+      .getPolygons()
+      .map((poly) => ({
+        poly,
+        area: poly.getArea(),
+      }));
+    // Simulate inner walls, starting from bigger area.
+    wallSourceAreasSeparate.sort((a, b) => b.area - a.area);
+    for (const walledArea of wallSourceAreasSeparate) {
+      const walledAreaJts = parser.read(walledArea.poly);
+      // Add innerwall of rooms within other rooms.
+      if (!wallSourceAreasJts.contains(walledAreaJts)) {
         wallSourceAreasJts = wallSourceAreasJts.union(
-          parser.read(levelArea.getGeometry())
-        );
-      }
-      // Cut away walkable areas to go from slab area to wall area.
-      // Negative buffer to simulate inner walls between rooms.
-      const wallSourceAreasSeparate = wallSourceAreas
-        .getPolygons()
-        .map((poly) => ({
-          poly,
-          area: poly.getArea(),
-        }));
-      // Simulate inner walls, starting from bigger area.
-      wallSourceAreasSeparate.sort((a, b) => b.area - a.area);
-      for (const walledArea of wallSourceAreasSeparate) {
-        const walledAreaJts = parser.read(walledArea.poly);
-        // Add innerwall of rooms within other rooms.
-        if (!wallSourceAreasJts.contains(walledAreaJts)) {
-          wallSourceAreasJts = wallSourceAreasJts.union(
-            jsts.operation.buffer.BufferOp.bufferOp(
-              walledAreaJts,
-              innerWallWidth / 2,
-              new jsts.operation.buffer.BufferParameters(
-                8,
-                jsts.operation.buffer.BufferParameters.CAP_FLAT,
-                jsts.operation.buffer.BufferParameters.JOIN_MITRE,
-                5
-              )
-            )
-          );
-        }
-        // Remove walkable area.
-        wallSourceAreasJts = wallSourceAreasJts.difference(
           jsts.operation.buffer.BufferOp.bufferOp(
             walledAreaJts,
-            -innerWallWidth / 2,
+            innerWallWidth / 2,
             new jsts.operation.buffer.BufferParameters(
               8,
               jsts.operation.buffer.BufferParameters.CAP_FLAT,
@@ -193,37 +186,49 @@ class Level {
           )
         );
       }
-      // Add explitly drawn walls.
-      for (const wall of this.features.filter(
-        (f) => f.get('indoor') === 'wall'
-      )) {
-        const wallGeo = wall.getGeometry();
-        if (wallGeo instanceof Polygon || wallGeo instanceof MultiPolygon) {
-          wallSourceAreasJts = wallSourceAreasJts.union(parser.read(wallGeo));
-        } else if (
-          wallGeo instanceof LineString ||
-          wallGeo instanceof MultiLineString
-        ) {
-          const wallWithThickness = jsts.operation.buffer.BufferOp.bufferOp(
-            parser.read(wallGeo),
-            innerWallWidth / 2,
-            new jsts.operation.buffer.BufferParameters(
-              8,
-              jsts.operation.buffer.BufferParameters.CAP_SQUARE,
-              jsts.operation.buffer.BufferParameters.JOIN_MITRE,
-              5
-            )
-          );
-          wallSourceAreasJts = wallSourceAreasJts.union(wallWithThickness);
-        }
-      }
-      // Cut door openings in wall area.
-      wallSourceAreasJts = wallSourceAreasJts.difference(doorBuffersJts);
-
-      this.wall.setGeometry(parser.write(wallSourceAreasJts));
-      this.wallRebuildRequired = false;
-      return this.wall;
+      // Remove walkable area.
+      wallSourceAreasJts = wallSourceAreasJts.difference(
+        jsts.operation.buffer.BufferOp.bufferOp(
+          walledAreaJts,
+          -innerWallWidth / 2,
+          new jsts.operation.buffer.BufferParameters(
+            8,
+            jsts.operation.buffer.BufferParameters.CAP_FLAT,
+            jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+            5
+          )
+        )
+      );
     }
+    // Add explitly drawn walls.
+    for (const wall of this.features.filter(
+      (f) => f.get('indoor') === 'wall'
+    )) {
+      const wallGeo = wall.getGeometry();
+      if (wallGeo instanceof Polygon || wallGeo instanceof MultiPolygon) {
+        wallSourceAreasJts = wallSourceAreasJts.union(parser.read(wallGeo));
+      } else if (
+        wallGeo instanceof LineString ||
+        wallGeo instanceof MultiLineString
+      ) {
+        const wallWithThickness = jsts.operation.buffer.BufferOp.bufferOp(
+          parser.read(wallGeo),
+          innerWallWidth / 2,
+          new jsts.operation.buffer.BufferParameters(
+            8,
+            jsts.operation.buffer.BufferParameters.CAP_SQUARE,
+            jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+            5
+          )
+        );
+        wallSourceAreasJts = wallSourceAreasJts.union(wallWithThickness);
+      }
+    }
+    // Cut door openings in wall area.
+    wallSourceAreasJts = wallSourceAreasJts.difference(doorBuffersJts);
+
+    this.wall.setGeometry(parser.write(wallSourceAreasJts));
+    this.wallRebuildRequired = false;
   };
 }
 
@@ -304,11 +309,18 @@ export class BuildingTopologySource extends VectorSource {
     this.changed();
   };
 
-  public rebuildWalls = (): void => {
+  public rebuildWalls = async (levelNumber: number): Promise<void> => {
     for (const level of this.levels) {
-      level.rebuildWall();
+      if (level.levelNumber === levelNumber && level.wallRebuildRequired) {
+        level.rebuildWall();
+        this.changed();
+        await new Promise<void>((resolve) =>
+          setTimeout(() => {
+            resolve();
+          }, 100)
+        );
+      }
     }
-    this.changed();
   };
 
   getFeaturesInExtent = (extent: Extent, projection: Projection): Feature[] => {

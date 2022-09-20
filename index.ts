@@ -70,7 +70,7 @@ overpassSource.addEventListener(
   }
 );
 overpassSource.addEventListener(VectorEventType.FEATURESLOADEND, () => {
-  source.rebuildWalls();
+  source.rebuildWalls(currentLevel);
 });
 map.addLayer(
   new VectorLayer({
@@ -135,6 +135,7 @@ const updateLevelPickerAsync = () => {
           (b as HTMLElement).classList.remove('active')
         );
         currentLevel = level;
+        source.rebuildWalls(currentLevel);
         map
           .getAllLayers()
           .filter((l) => l.getSource() instanceof VectorSource)
