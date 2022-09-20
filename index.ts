@@ -39,6 +39,7 @@ const map = new Map({
     zoom: 15,
   }),
 });
+const buildingVisibilityMinZoom = 14;
 
 let currentLevel = 0;
 function isOnCurrentLevel(f: FeatureLike) {
@@ -74,7 +75,7 @@ overpassSource.addEventListener(VectorEventType.FEATURESLOADEND, () => {
 map.addLayer(
   new VectorLayer({
     source: overpassSource,
-    minZoom: 14,
+    minZoom: buildingVisibilityMinZoom,
     style: null,
   })
 );
@@ -96,7 +97,19 @@ const updateLevelPickerAsync = () => {
   clearTimeout(levelPickerUpdateTimer);
   levelPickerUpdateTimer = setTimeout(() => {
     const viewExtent = map.getView().calculateExtent();
-    const features = source.getFeaturesInExtent(viewExtent).filter(f => f.get('generated-wall')==='yes');
+    const features = source
+      .getFeaturesInExtent(viewExtent)
+      // Only consider features for level picker that are likely to be rendered.
+      .filter(
+        (f) =>
+          f.get('level') &&
+          (f.get('generated-wall') === 'yes' ||
+            ['room', 'corridor', 'area'].includes(f.get('indoor')) ||
+            f.get('room') ||
+            f.get('indoor') === 'stairs' ||
+            f.get('stais') ||
+            f.get('highway') === 'steps')
+      );
     const presentLevels: number[] = Array.from(
       new Set(
         features.flatMap((f) => {
@@ -135,6 +148,23 @@ const updateLevelPickerAsync = () => {
 map.getView().addEventListener('change', updateLevelPickerAsync);
 source.addEventListener('change', updateLevelPickerAsync);
 
+const buildingStyle = [
+  new Style({
+    stroke: new Stroke({
+      color: 'magenta',
+      width: 15,
+    }),
+  }),
+  new Style({
+    stroke: new Stroke({
+      color: 'white',
+      width: 10,
+    }),
+    fill: new Fill({
+      color: 'white',
+    }),
+  }),
+];
 const roomStyle = new Style({
   fill: new Fill({
     color: 'white',
@@ -201,7 +231,18 @@ const elevatorIconUri =
 map.addLayer(
   new VectorLayer({
     source,
+    minZoom: buildingVisibilityMinZoom,
     renderOrder: (f1, f2) => {
+      // Draw buildings first.
+      const f1Builing = f1.get('building');
+      const f2Building = f2.get('building');
+      if (f1Builing && !f2Building) {
+        return -1;
+      }
+      if (!f1Builing && f2Building) {
+        return 1;
+      }
+
       // Draw walls last.
       const f1Wall = f1.get('generated-wall') === 'yes';
       const f2Wall = f2.get('generated-wall') === 'yes';
@@ -230,6 +271,10 @@ map.addLayer(
       return defaultOrder(f1, f2);
     },
     style: (f, meterPerPixel) => {
+      if (f.get('building')) {
+        return buildingStyle;
+      }
+
       if (!isOnCurrentLevel(f)) {
         return;
       }
@@ -291,7 +336,7 @@ map.addLayer(
                   ? null
                   : conveying === 'backward'
                   ? stairsUpIcon
-                  : stairsIcon
+                  : stairsUpIcon
               );
             } else if (level?.endsWith(';' + currentLevel)) {
               stairsIconStyle.setGeometry(new Point(geo.getFirstCoordinate()));
@@ -300,7 +345,7 @@ map.addLayer(
                   ? stairsDownIcon
                   : conveying === 'backward'
                   ? null
-                  : stairsIcon
+                  : stairsDownIcon
               );
             }
           } else {
@@ -313,7 +358,7 @@ map.addLayer(
                   ? stairsUpIcon
                   : conveying === 'backward'
                   ? null
-                  : stairsIcon
+                  : stairsUpIcon
               );
             } else if (level?.endsWith(';' + currentLevel)) {
               stairsIconStyle.setGeometry(new Point(geo.getLastCoordinate()));
@@ -322,7 +367,7 @@ map.addLayer(
                   ? null
                   : conveying === 'backward'
                   ? stairsDownIcon
-                  : stairsIcon
+                  : stairsDownIcon
               );
             }
           }
@@ -339,7 +384,7 @@ map.addLayer(
 map.addLayer(
   new LabelLayer({
     source,
-    minZoom: 14,
+    minZoom: buildingVisibilityMinZoom,
     filter: (f) => f.get('indoor') !== 'level' && isOnCurrentLevel(f),
     labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';
