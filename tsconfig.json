@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
-    "target": "esnext",
+    "target": "es2021",
     "resolveJsonModule": true,
-    "lib": "es2019"
+    "lib": "es2021"
   }
 }

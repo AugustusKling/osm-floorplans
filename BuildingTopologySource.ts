@@ -1,5 +1,4 @@
 import { Feature } from 'ol';
-import { Geometry } from 'ol/geom';
 import VectorSource from 'ol/source/Vector';
 import {
   LineString,
@@ -36,7 +35,6 @@ class Level {
 
   constructor(public levelNumber: number, seedGeometry: jsts.geom.Geometry) {
     this.wall.set('level', String(levelNumber));
-    this.wall.setGeometry(parser.write(seedGeometry));
     this.geometry = seedGeometry;
   }
 
@@ -256,12 +254,19 @@ export function parseLevel(f: FeatureLike): { from: number; to: number }[] {
 export class BuildingTopologySource extends VectorSource {
   private resultingFeatures = new VectorSource();
   private levels: Level[] = [];
+  private activeLevel: number;
 
-  public constructor() {
+  public constructor(options: { activeLevel: number }) {
     super({
       features: [],
     });
+    this.activeLevel = options.activeLevel;
   }
+
+  public setActiveLevel = (activeLevel: number): void => {
+    this.activeLevel = activeLevel;
+    this.changed();
+  };
 
   private levelsOfFeature = (feature: Feature): number[] => {
     const level = parseLevel(feature);
@@ -309,21 +314,70 @@ export class BuildingTopologySource extends VectorSource {
     this.changed();
   };
 
-  public rebuildWalls = async (levelNumber: number): Promise<void> => {
+  getFeaturesInExtent = (extent: Extent, projection: Projection): Feature[] => {
+    const extentJts = new jsts.geom.Envelope(
+      extent[0],
+      extent[2],
+      extent[1],
+      extent[3]
+    );
+    const start = new Date().getTime();
     for (const level of this.levels) {
-      if (level.levelNumber === levelNumber && level.wallRebuildRequired) {
-        level.rebuildWall();
-        this.changed();
-        await new Promise<void>((resolve) =>
+      if (
+        level.levelNumber === this.activeLevel &&
+        level.wallRebuildRequired &&
+        extentJts.intersects(level.geometry.getEnvelopeInternal())
+      ) {
+        const elapsed = new Date().getTime() - start;
+        if (elapsed < 100) {
+          level.rebuildWall();
+        } else {
+          // Abort wall simulation but trigger delayed change to simulate next wall batch.
           setTimeout(() => {
-            resolve();
-          }, 100)
-        );
+            this.changed();
+          }, 500);
+          break;
+        }
       }
     }
+    return this.resultingFeatures
+      .getFeaturesInExtent(extent, projection)
+      .filter((f) => {
+        if (f.get('building')) {
+          return true;
+        }
+        const level = parseLevel(f);
+        return (
+          level &&
+          level.some(
+            (fromTo) =>
+              fromTo &&
+              fromTo.from <= this.activeLevel &&
+              fromTo.to >= this.activeLevel
+          )
+        );
+      });
   };
 
-  getFeaturesInExtent = (extent: Extent, projection: Projection): Feature[] => {
-    return this.resultingFeatures.getFeaturesInExtent(extent, projection);
+  getPresentLevels = (
+    extent: Extent,
+    projection: Projection,
+    filter: (f: Feature) => boolean
+  ): number[] => {
+    const features = this.resultingFeatures
+      .getFeaturesInExtent(extent, projection)
+      .filter(filter);
+    return Array.from(
+      new Set(
+        features.flatMap((f) => {
+          const level = parseLevel(f);
+          if (level) {
+            return level.flatMap((l) => [l.from, l.to]);
+          } else {
+            return [];
+          }
+        })
+      )
+    ).sort((a, b) => a - b);
   };
 }

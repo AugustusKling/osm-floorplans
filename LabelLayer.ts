@@ -22,7 +22,7 @@ import {
   toUserExtent,
 } from 'ol/proj';
 import LayerRenderer from 'ol/renderer/Layer';
-import { defaultOrder, getSquaredTolerance } from 'ol/renderer/vector';
+import { defaultOrder } from 'ol/renderer/vector';
 import VectorSource from 'ol/source/Vector';
 import { apply, compose, create, Transform } from 'ol/transform';
 import ViewHint from 'ol/ViewHint';

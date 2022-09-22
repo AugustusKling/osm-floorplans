@@ -1,14 +1,11 @@
 // Import stylesheets
-import { Feature, Map, View } from 'ol';
+import { Map, View } from 'ol';
 import TileLayer from 'ol/layer/Tile';
 import OSM from 'ol/source/OSM';
 import './style.css';
 
 import {
   LineString,
-  LinearRing,
-  MultiLineString,
-  MultiPoint,
   MultiPolygon,
   Point,
   Polygon,
@@ -36,10 +33,10 @@ const map = new Map({
   ],
   view: new View({
     center: transform([9.8942147, 47.9101541], 'EPSG:4326', 'EPSG:3857'),
-    zoom: 15,
+    zoom: 16,
   }),
 });
-const buildingVisibilityMinZoom = 14;
+const buildingVisibilityMinZoom = 15;
 
 let currentLevel = 0;
 function isOnCurrentLevel(f: FeatureLike) {
@@ -53,7 +50,9 @@ function isOnCurrentLevel(f: FeatureLike) {
   );
 }
 
-const source = new BuildingTopologySource();
+const source = new BuildingTopologySource({
+  activeLevel: currentLevel,
+});
 const overpassSource = new OverpassSource({
   strategy: tile(
     createXYZ({
@@ -69,9 +68,6 @@ overpassSource.addEventListener(
     source.addFeature(e.feature);
   }
 );
-overpassSource.addEventListener(VectorEventType.FEATURESLOADEND, () => {
-  source.rebuildWalls(currentLevel);
-});
 map.addLayer(
   new VectorLayer({
     source: overpassSource,
@@ -97,31 +93,19 @@ const updateLevelPickerAsync = () => {
   clearTimeout(levelPickerUpdateTimer);
   levelPickerUpdateTimer = setTimeout(() => {
     const viewExtent = map.getView().calculateExtent();
-    const features = source
-      .getFeaturesInExtent(viewExtent)
-      // Only consider features for level picker that are likely to be rendered.
-      .filter(
-        (f) =>
-          f.get('level') &&
-          (f.get('generated-wall') === 'yes' ||
-            ['room', 'corridor', 'area'].includes(f.get('indoor')) ||
-            f.get('room') ||
-            f.get('indoor') === 'stairs' ||
-            f.get('stais') ||
-            f.get('highway') === 'steps')
-      );
-    const presentLevels: number[] = Array.from(
-      new Set(
-        features.flatMap((f) => {
-          const level = parseLevel(f);
-          if (level) {
-            return level.flatMap((l) => [l.from, l.to]);
-          } else {
-            return [];
-          }
-        })
-      )
-    ).sort((a, b) => a - b);
+    const presentLevels: number[] = source.getPresentLevels(
+      viewExtent,
+      map.getView().getProjection(),
+      (f) =>
+        // Only consider features for level picker that are likely to be rendered.
+        f.get('level') &&
+        (f.get('generated-wall') === 'yes' ||
+          ['room', 'corridor', 'area'].includes(f.get('indoor')) ||
+          f.get('room') ||
+          f.get('indoor') === 'stairs' ||
+          f.get('stais') ||
+          f.get('highway') === 'steps')
+    );
     levelPicker.replaceChildren([]);
     for (const level of presentLevels) {
       const button = document.createElement('button');
@@ -135,7 +119,7 @@ const updateLevelPickerAsync = () => {
           (b as HTMLElement).classList.remove('active')
         );
         currentLevel = level;
-        source.rebuildWalls(currentLevel);
+        source.setActiveLevel(currentLevel);
         map
           .getAllLayers()
           .filter((l) => l.getSource() instanceof VectorSource)
