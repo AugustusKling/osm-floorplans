@@ -5,7 +5,10 @@ import OSM from 'ol/source/OSM';
 import './style.css';
 
 import {
+LinearRing,
   LineString,
+  MultiLineString,
+  MultiPoint,
   MultiPolygon,
   Point,
   Polygon,
@@ -18,11 +21,25 @@ import { defaultOrder } from 'ol/renderer/vector';
 import { OverpassSource } from './OverpassSource';
 import { createXYZ } from 'ol/tilegrid';
 import { tile } from 'ol/loadingstrategy';
-import { transform } from 'ol/proj';
+import { toUserExtent, transform } from 'ol/proj';
 import { TileDebug } from 'ol/source';
 import { BuildingTopologySource, parseLevel } from './BuildingTopologySource';
 import VectorEventType from 'ol/source/VectorEventType';
 import { FeatureLike } from 'ol/Feature';
+import { FrameState } from 'ol/Map';
+import { Transform } from 'ol/transform';
+import { transform2D } from 'ol/geom/flat/transform';
+
+const parser = new jsts.io.OL3Parser();
+parser.inject(
+  Point,
+  LineString,
+  LinearRing,
+  Polygon,
+  MultiPoint,
+  MultiLineString,
+  MultiPolygon
+);
 
 const map = new Map({
   target: 'map',
@@ -371,6 +388,22 @@ map.addLayer(
     source,
     minZoom: buildingVisibilityMinZoom,
     filter: (f) => f.get('indoor') !== 'level' && isOnCurrentLevel(f),
+    occupiedSpace: (
+      world: number,
+      frameState: FrameState,
+      transform: Transform,
+      rotation: number
+    ): jsts.geom.Geometry[] => {
+      return source.getFeaturesInExtent(frameState.extent, frameState.viewState.projection)
+        .filter(f => f.get('generated-wall')==='yes')
+        .map(wall => {
+          const screenGeometry = wall.getGeometry().clone();
+          screenGeometry.applyTransform((coords, dest, dim) => {
+            return transform2D(coords, 0, coords.length, dim, transform, dest);
+          });
+          return parser.read(screenGeometry);
+        });
+    },
     labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';
       const name = f.get('name');

@@ -41,20 +41,30 @@ type LabelProvider = (
 export class LabelLayer extends Layer<VectorSource> {
   private labelProvider: LabelProvider;
   private filter: (f: FeatureLike) => boolean;
+  private occupiedSpaces: (
+    world: number,
+    frameState: FrameState,
+    transform: Transform,
+    rotation: number
+  ) => jsts.geom.Geometry[];
 
   public constructor(
     options: Options<VectorSource> & {
       labelProvider: LabelProvider;
       filter?: (f: FeatureLike) => boolean;
+      occupiedSpaces?: typeof this.occupiedSpace;
     }
   ) {
     super(options);
     this.labelProvider = options.labelProvider;
     this.filter = options.filter || (() => true);
+    this.occupiedSpaces = options.occupiedSpaces || (() => []);
   }
 
   public getLabelProvider = (): LabelProvider => this.labelProvider;
   public getFilter = (): ((f: FeatureLike) => boolean) => this.filter;
+  public getOccupiedSpaces = (): typeof this.occupiedSpaces =>
+    this.occupiedSpaces;
 
   createRenderer = (): LayerRenderer<LabelLayer> => {
     return new LabelRenderer(this);
@@ -110,7 +120,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   private parser = new jsts.io.OL3Parser();
   private geoJson = new GeoJSON();
   private cache = new WeakMap<Feature, CacheEntry>();
-  private occupiedSpace: jsts.geom.Geometry = new jsts.geom.MultiPolygon([]);
+  private occupiedSpaces: jsts.geom.Geometry[] = [];
 
   constructor(layer: LabelLayer) {
     super(layer);
@@ -288,7 +298,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             allowExtendingGeometry ||
             (allRects &&
               screenGeometryJts.contains(allRects) &&
-              !this.occupiedSpace.intersects(allRects))
+              !this.intersectsOccupiedSpaces(allRects))
           ) {
             //Found okay
             const shiftToGeometryCenter =
@@ -329,6 +339,19 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     }
   };
 
+  private intersectsOccupiedSpaces = (geo: jsts.geom.Geometry): boolean => {
+    const geoExtent = geo.getEnvelopeInternal();
+    for (const occupiedSpace of this.occupiedSpaces) {
+      if (
+        occupiedSpace.getEnvelopeInternal().intersects(geoExtent) &&
+        occupiedSpace.intersects(geo)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   private tryOccupy(
     center: Coordinate,
     labelParams: LabelParam
@@ -342,8 +365,8 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     const shiftToGeometryCenter =
       new jsts.geom.util.AffineTransformation().translate(center[0], center[1]);
     const labelGeom = shiftToGeometryCenter.transform(labelParams.shape);
-    if (!this.occupiedSpace.intersects(labelGeom)) {
-      this.occupiedSpace = this.occupiedSpace.union(labelGeom);
+    if (!this.intersectsOccupiedSpaces(labelGeom)) {
+      this.occupiedSpaces.push(labelGeom);
       return envelope;
     }
   }
@@ -387,7 +410,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     } else {
       const labels = this.renderWorlds(frameState);
       this.container.replaceChildren(...labels);
-      this.occupiedSpace = new jsts.geom.MultiPolygon([]);
+      this.occupiedSpaces = this.forEachWorld(
+        frameState,
+        this.getLayer().getOccupiedSpaces()
+      ).flatMap((g) => g);
     }
     return this.container;
   };
@@ -422,6 +448,22 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   };
 
   renderWorlds(frameState: FrameState): HTMLElement[] {
+    const presentLabels: HTMLElement[] = [];
+    for (const worldLabels of this.forEachWorld(frameState, this.renderWorld)) {
+      presentLabels.push(...worldLabels);
+    }
+    return presentLabels;
+  }
+
+  private forEachWorld<X>(
+    frameState: FrameState,
+    mapper: (
+      world: number,
+      frameState: FrameState,
+      transform: Transform,
+      rotation: number
+    ) => X
+  ): X[] {
     const extent = frameState.extent;
     const viewState = frameState.viewState;
     const center = viewState.center;
@@ -445,7 +487,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     let world = multiWorld
       ? Math.floor((extent[0] - projectionExtent[0]) / worldWidth)
       : 0;
-    const presentLabels: HTMLElement[] = [];
+    const presentLabels: X[] = [];
     do {
       const transform = this.getRenderTransform(
         center,
@@ -455,9 +497,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         height,
         world * worldWidth
       );
-      presentLabels.push(
-        ...this.renderWorld(world, frameState, transform, rotation)
-      );
+      presentLabels.push(mapper(world, frameState, transform, rotation));
     } while (++world < endWorld);
     return presentLabels;
   }
