@@ -5,7 +5,7 @@ import OSM from 'ol/source/OSM';
 import './style.css';
 
 import {
-LinearRing,
+  LinearRing,
   LineString,
   MultiLineString,
   MultiPoint,
@@ -21,7 +21,7 @@ import { defaultOrder } from 'ol/renderer/vector';
 import { OverpassSource } from './OverpassSource';
 import { createXYZ } from 'ol/tilegrid';
 import { tile } from 'ol/loadingstrategy';
-import { toUserExtent, transform } from 'ol/proj';
+import { transform } from 'ol/proj';
 import { TileDebug } from 'ol/source';
 import { BuildingTopologySource, parseLevel } from './BuildingTopologySource';
 import VectorEventType from 'ol/source/VectorEventType';
@@ -121,7 +121,8 @@ const updateLevelPickerAsync = () => {
           f.get('room') ||
           f.get('indoor') === 'stairs' ||
           f.get('stais') ||
-          f.get('highway') === 'steps')
+          f.get('highway') === 'steps' ||
+          f.get('name'))
     );
     levelPicker.replaceChildren([]);
     for (const level of presentLevels) {
@@ -388,15 +389,16 @@ map.addLayer(
     source,
     minZoom: buildingVisibilityMinZoom,
     filter: (f) => f.get('indoor') !== 'level' && isOnCurrentLevel(f),
-    occupiedSpace: (
+    occupiedSpaces: (
       world: number,
       frameState: FrameState,
       transform: Transform,
       rotation: number
     ): jsts.geom.Geometry[] => {
-      return source.getFeaturesInExtent(frameState.extent, frameState.viewState.projection)
-        .filter(f => f.get('generated-wall')==='yes')
-        .map(wall => {
+      return source
+        .getFeaturesInExtent(frameState.extent, frameState.viewState.projection)
+        .filter((f) => f.get('generated-wall') === 'yes')
+        .map((wall) => {
           const screenGeometry = wall.getGeometry().clone();
           screenGeometry.applyTransform((coords, dest, dim) => {
             return transform2D(coords, 0, coords.length, dim, transform, dest);
@@ -406,6 +408,17 @@ map.addLayer(
     },
     labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';
+
+      const typeName = f.get('shop') || f.get('amenity') || f.get('vending');
+      if (variant === 'default' && typeName) {
+        const typeNameLabel = document.createElement('div');
+        typeNameLabel.style.margin = '0';
+        typeNameLabel.style.fontSize = '11px';
+        typeNameLabel.style.color = '#666';
+        typeNameLabel.append(typeName);
+        label.append(typeNameLabel);
+      }
+
       const name = f.get('name');
       if (variant === 'default' && name) {
         const title = document.createElement('p');

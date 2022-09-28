@@ -11,6 +11,8 @@ export class OverpassSource extends VectorSource {
   (
     nw["indoor"]["level"]({{bbox}});
     nw["door"]["level"]({{bbox}});
+    nw["entrance"]["level"]({{bbox}});
+    nw["shop"]["level"]({{bbox}});
   ) -> .indoor;
   .indoor >; is_in;nwr(pivot._)[building]({{bbox}}) -> .buildings;
   // print results

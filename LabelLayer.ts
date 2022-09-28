@@ -212,6 +212,95 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     screenGeometry.applyTransform((coords, dest, dim) => {
       return transform2D(coords, 0, coords.length, dim, transform, dest);
     });
+
+    if (screenGeometry instanceof Point) {
+      const screenGeometryJts = this.parser.read(
+        screenGeometry
+      ) as jsts.geom.Point;
+      cached.inacessibilityPole = (geometry as Point).getCoordinates() as [
+        number,
+        number
+      ];
+      // Arbitrary.
+      let maxWidth = 500;
+      const label = document.createElement('div');
+      label.style.position = 'absolute';
+
+      let variant: string | void = 'default';
+      while (variant) {
+        label.innerHTML = '';
+        const placementOptions = this.getLayer().getLabelProvider()(
+          feature,
+          label,
+          variant,
+          frameState
+        );
+        variant = placementOptions ? placementOptions.fallbackVariant : null;
+        const allowExtendingGeometry = placementOptions
+          ? placementOptions.allowExtendingGeometry
+          : false;
+
+        if (label.childNodes.length === 0) {
+          // Abort rendering, no label contents.
+          cached.labels[resolutionCacheKey] = null;
+          return;
+        }
+        this.container.append(label);
+
+        if (!allowExtendingGeometry && label.scrollWidth > maxWidth) {
+          // No valid label placement.
+          cached.labels[resolutionCacheKey] = null;
+          this.container.removeChild(label);
+          continue;
+        }
+
+        const range = new Range();
+        for (let i = 0; i < 10; i++) {
+          const rangeRectsJts = this.getRectsJts(
+            screenGeometryJts,
+            label,
+            range
+          );
+
+          if (
+            allowExtendingGeometry ||
+            (rangeRectsJts && !this.intersectsOccupiedSpaces(rangeRectsJts))
+          ) {
+            //Found okay
+            cached.labels[resolutionCacheKey] = {
+              div: label,
+              shape: rangeRectsJts,
+              width: rangeRectsJts.getEnvelopeInternal().getWidth(),
+              height: rangeRectsJts.getEnvelopeInternal().getHeight(),
+            };
+            break;
+          }
+
+          maxWidth = rangeRectsJts.getEnvelopeInternal().getWidth() - 50;
+          if (maxWidth < 30) {
+            // Arbitry minimum size not reached.
+            cached.labels[resolutionCacheKey] = null;
+            return;
+          }
+          label.style.width = `${maxWidth}px`;
+        }
+        range.detach();
+        const labelParams = cached.labels[resolutionCacheKey];
+        const envelope = labelParams && this.tryOccupy([0, 0], labelParams);
+        if (envelope) {
+          label.style.left = `${
+            screenGeometryJts.getX() + envelope.getMinX()
+          }px`;
+          label.style.top = `${
+            screenGeometryJts.getY() + envelope.getMinY()
+          }px`;
+          return label;
+        } else {
+          this.container.removeChild(label);
+        }
+      }
+    }
+
     if (screenGeometry instanceof Polygon) {
       let maxWidth = Math.floor(getWidth(screenGeometry.getExtent()));
       if (maxWidth < 30) {
@@ -315,13 +404,15 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             break;
           }
 
-          maxWidth =
+          maxWidth = Math.min(
+            maxWidth - 1,
             Math.floor(
               screenGeometryJts
                 .intersection(allRects)
                 .getEnvelopeInternal()
                 .getWidth()
-            ) - 1;
+            ) - 1
+          );
           label.style.width = `${maxWidth}px`;
         }
         range.detach();
@@ -386,6 +477,33 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     return rects;
   }
 
+  private getRectsJts = (
+    centerAroundJts: jsts.geom.Point,
+    element: HTMLElement,
+    range: Range
+  ): jsts.geom.Geometry => {
+    const domRects = this.getRects(element, range);
+    const rects: jsts.geom.Geometry[] = domRects.map((rect) => {
+      const envelope = new jsts.geom.Envelope(
+        rect.left,
+        rect.right,
+        rect.top,
+        rect.bottom
+      );
+      return centerAroundJts.getFactory().toGeometry(envelope);
+    });
+    const allRects =
+      rects.length > 0
+        ? rects.reduce((prev, current) => prev.union(current))
+        : undefined;
+    const center = centerAroundJts.getCoordinate();
+    const envelope = allRects.getEnvelopeInternal();
+    return jsts.geom.util.AffineTransformation.translationInstance(
+      center.x - envelope.getWidth() / 2,
+      center.y - envelope.getHeight() / 2
+    ).transform(allRects);
+  };
+
   prepareFrame = (frameState: FrameState): boolean => {
     const userExtent = toUserExtent(
       frameState.extent,
@@ -408,12 +526,12 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     if (this.container.parentElement === null) {
       this.changed();
     } else {
-      const labels = this.renderWorlds(frameState);
-      this.container.replaceChildren(...labels);
       this.occupiedSpaces = this.forEachWorld(
         frameState,
         this.getLayer().getOccupiedSpaces()
       ).flatMap((g) => g);
+      const labels = this.renderWorlds(frameState);
+      this.container.replaceChildren(...labels);
     }
     return this.container;
   };
