@@ -409,13 +409,17 @@ map.addLayer(
     labelProvider: (f, label, variant) => {
       label.style.textAlign = 'center';
 
-      const typeName = f.get('shop') || f.get('amenity') || f.get('vending');
+      const typeName: string =
+        f.get('shop') || f.get('amenity') || f.get('vending');
       if (variant === 'default' && typeName) {
         const typeNameLabel = document.createElement('div');
         typeNameLabel.style.margin = '0';
         typeNameLabel.style.fontSize = '11px';
         typeNameLabel.style.color = '#666';
-        typeNameLabel.append(typeName);
+        typeNameLabel.append(
+          // Replace OSM values to resemble ordinary English.
+          typeName.replace('_', ' ').replace(';', ', ')
+        );
         label.append(typeNameLabel);
       }
 

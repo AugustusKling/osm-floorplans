@@ -184,18 +184,20 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       apply(transform, screenGeometryCenter);
 
       const labelParams = cached.labels[resolutionCacheKey];
-      const labelDiv =
-        world === 0
-          ? labelParams.div
-          : (labelParams.div.cloneNode(true) as HTMLDivElement);
-      labelDiv.style.left = `${
-        screenGeometryCenter[0] - labelParams.width / 2
-      }px`;
-      labelDiv.style.top = `${
-        screenGeometryCenter[1] - labelParams.height / 2
-      }px`;
-      this.container.append(labelDiv);
-      return labelDiv;
+      if (this.tryOccupy(screenGeometryCenter, labelParams)) {
+        const labelDiv =
+          world === 0
+            ? labelParams.div
+            : (labelParams.div.cloneNode(true) as HTMLDivElement);
+        labelDiv.style.left = `${
+          screenGeometryCenter[0] - labelParams.width / 2
+        }px`;
+        labelDiv.style.top = `${
+          screenGeometryCenter[1] - labelParams.height / 2
+        }px`;
+        this.container.append(labelDiv);
+        return labelDiv;
+      }
     }
 
     const geometry = feature.getGeometry();
@@ -221,6 +223,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         number,
         number
       ];
+      const screenGeometryCenter = screenGeometry.getFirstCoordinate();
       // Arbitrary.
       let maxWidth = 500;
       const label = document.createElement('div');
@@ -269,7 +272,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             //Found okay
             cached.labels[resolutionCacheKey] = {
               div: label,
-              shape: rangeRectsJts,
+              shape: jsts.geom.util.AffineTransformation.translationInstance(
+                -screenGeometryCenter[0],
+                -screenGeometryCenter[1]
+              ).transform(rangeRectsJts),
               width: rangeRectsJts.getEnvelopeInternal().getWidth(),
               height: rangeRectsJts.getEnvelopeInternal().getHeight(),
             };
@@ -286,7 +292,8 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         }
         range.detach();
         const labelParams = cached.labels[resolutionCacheKey];
-        const envelope = labelParams && this.tryOccupy([0, 0], labelParams);
+        const envelope =
+          labelParams && this.tryOccupy(screenGeometryCenter, labelParams);
         if (envelope) {
           label.style.left = `${
             screenGeometryJts.getX() + envelope.getMinX()
