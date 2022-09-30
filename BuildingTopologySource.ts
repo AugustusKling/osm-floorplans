@@ -159,21 +159,36 @@ class Level {
     }
     // Cut away walkable areas to go from slab area to wall area.
     // Negative buffer to simulate inner walls between rooms.
-    const wallSourceAreasSeparate = wallSourceAreas
-      .getPolygons()
-      .map((poly) => ({
+    const walkableAreasSeparate = [
+      // Walled walkable areas.
+      ...wallSourceAreas.getPolygons().map((poly) => ({
+        walled: true,
         poly,
         area: poly.getArea(),
-      }));
+      })),
+      // Unwalled walkable area (since there are indoor=area occasionally outwit rooms).
+      ...this.features
+        .filter((f) => f.get('indoor') === 'area')
+        .map((f) => f.getGeometry())
+        .filter((geo) => geo instanceof Polygon || geo instanceof MultiPolygon)
+        .map((poly) => ({
+          walled: false,
+          poly,
+          area: (poly as Polygon | MultiPolygon).getArea(),
+        })),
+    ];
     // Simulate inner walls, starting from bigger area.
-    wallSourceAreasSeparate.sort((a, b) => b.area - a.area);
-    for (const walledArea of wallSourceAreasSeparate) {
-      const walledAreaJts = parser.read(walledArea.poly);
+    walkableAreasSeparate.sort((a, b) => b.area - a.area);
+    for (const walkableArea of walkableAreasSeparate) {
+      const walkableAreaJts = parser.read(walkableArea.poly);
       // Add innerwall of rooms within other rooms.
-      if (!wallSourceAreasJts.contains(walledAreaJts)) {
+      if (
+        walkableArea.walled &&
+        !wallSourceAreasJts.contains(walkableAreaJts)
+      ) {
         wallSourceAreasJts = wallSourceAreasJts.union(
           jsts.operation.buffer.BufferOp.bufferOp(
-            walledAreaJts,
+            walkableAreaJts,
             innerWallWidth / 2,
             new jsts.operation.buffer.BufferParameters(
               8,
@@ -187,7 +202,7 @@ class Level {
       // Remove walkable area.
       wallSourceAreasJts = wallSourceAreasJts.difference(
         jsts.operation.buffer.BufferOp.bufferOp(
-          walledAreaJts,
+          walkableAreaJts,
           -innerWallWidth / 2,
           new jsts.operation.buffer.BufferParameters(
             8,
