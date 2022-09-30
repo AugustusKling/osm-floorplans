@@ -173,6 +173,11 @@ const roomStyle = new Style({
     color: 'white',
   }),
 });
+const areaStroke = new Stroke({
+  color: 'darkgray',
+  lineDash: [5],
+  width: 1,
+});
 const roomIconStyle = new Style({
   geometry: (f) => {
     const geo = f.getGeometry();
@@ -287,6 +292,9 @@ map.addLayer(
         f.get('room')
       ) {
         roomStyle.getFill().setColor('white');
+        roomStyle.setStroke(
+          f.get('indoor') === 'area' ? areaStroke : undefined
+        );
         if (f.get('indoor') === 'corridor') {
           roomStyle.getFill().setColor('#dfc');
         }
@@ -418,7 +426,7 @@ map.addLayer(
         typeNameLabel.style.color = '#666';
         typeNameLabel.append(
           // Replace OSM values to resemble ordinary English.
-          typeName.replace('_', ' ').replace(';', ', ')
+          typeName.replaceAll('_', ' ').replaceAll(';', ', ')
         );
         label.append(typeNameLabel);
       }
