@@ -242,6 +242,23 @@ class Level {
 
     this.wall.setGeometry(parser.write(wallSourceAreasJts));
     this.wallRebuildRequired = false;
+
+    this.cutWallFromAreas(wallSourceAreasJts);
+  };
+
+  private cutWallFromAreas = (wallAreaJts: jsts.geom.Geometry): void => {
+    for (const feature of this.features) {
+      const featureGeometry = feature.getGeometry();
+      if (
+        featureGeometry instanceof Polygon ||
+        featureGeometry instanceof MultiPolygon
+      ) {
+        const oldFeatureGeometryJts = parser.read(featureGeometry);
+        const newFeatureGeometryJts =
+          oldFeatureGeometryJts.difference(wallAreaJts);
+        feature.setGeometry(parser.write(newFeatureGeometryJts));
+      }
+    }
   };
 }
 
