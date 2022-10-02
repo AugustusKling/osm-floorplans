@@ -1,3 +1,4 @@
+import { geom } from 'jsts';
 import { Feature } from 'ol';
 import { Coordinate } from 'ol/coordinate';
 import { getHeight, getWidth } from 'ol/extent';
@@ -171,7 +172,17 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     world: number,
     rotation: number
   ): HTMLElement => {
-    const geometry = feature.getGeometry();
+    let geometry = feature.getGeometry();
+    if (geometry instanceof MultiPolygon) {
+      let biggestArea = 0;
+      for (const poly of geometry.getPolygons()) {
+        const area = poly.getArea();
+        if (area > biggestArea) {
+          biggestArea = area;
+          geometry = poly;
+        }
+      }
+    }
     if (!(geometry instanceof Point || geometry instanceof Polygon)) {
       // Other types not supported by code below.
       return;
@@ -307,10 +318,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           this.tryOccupy(screenGeometryCenter, labelParams, false);
         if (envelope) {
           label.style.left = `${
-            screenGeometryJts.getX() + envelope.getMinX()
+            screenGeometryJts.getX() - labelParams.width / 2
           }px`;
           label.style.top = `${
-            screenGeometryJts.getY() + envelope.getMinY()
+            screenGeometryJts.getY() - labelParams.height / 2
           }px`;
           return label;
         } else {
@@ -360,7 +371,6 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         }
 
         const range = new Range();
-        let rangeRect: jsts.geom.Envelope;
         cached.inacessibilityPole =
           cached.inacessibilityPole ||
           (polylabel(
@@ -371,12 +381,19 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         apply(transform, screenGeometryCenter);
         const screenGeometryJts = this.parser.read(screenGeometry);
         for (let i = 0; i < 10; i++) {
-          const domRects = this.getRects(label, range);
-          rangeRect = new jsts.geom.Envelope();
-          for (const r of domRects) {
-            rangeRect.expandToInclude(r.left, r.top);
-            rangeRect.expandToInclude(r.right, r.bottom);
-          }
+          const rangeRectsJts = this.getRectsJts(
+            screenGeometryJts
+              .getFactory()
+              .createPoint(
+                new jsts.geom.Coordinate(
+                  screenGeometryCenter[0],
+                  screenGeometryCenter[1]
+                )
+              ),
+            label,
+            range
+          );
+          const rangeRect = rangeRectsJts.getEnvelopeInternal();
           if (
             !allowExtendingGeometry &&
             (label.scrollWidth - 2 > maxWidth ||
@@ -388,35 +405,21 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             break;
           }
 
-          const rects: jsts.geom.Geometry[] = domRects.map((rect) => {
-            const envelope = new jsts.geom.Envelope(
-              screenGeometryCenter[0] - maxWidth / 2 + rect.left,
-              screenGeometryCenter[0] - maxWidth / 2 + rect.right,
-              screenGeometryCenter[1] - rangeRect.getHeight() / 2 + rect.top,
-              screenGeometryCenter[1] - rangeRect.getHeight() / 2 + rect.bottom
-            );
-            return screenGeometryJts.getFactory().toGeometry(envelope);
-          });
-          const allRects =
-            rects.length > 0
-              ? rects.reduce((prev, current) => prev.union(current))
-              : undefined;
-
           if (
             allowExtendingGeometry ||
-            (allRects &&
-              screenGeometryJts.contains(allRects) &&
-              !this.intersectsOccupiedSpaces(allRects, false))
+            (rangeRectsJts &&
+              screenGeometryJts.contains(rangeRectsJts) &&
+              !this.intersectsOccupiedSpaces(rangeRectsJts, false))
           ) {
             //Found okay
             const shiftToGeometryCenter =
-              new jsts.geom.util.AffineTransformation().translate(
+              jsts.geom.util.AffineTransformation.translationInstance(
                 -screenGeometryCenter[0],
                 -screenGeometryCenter[1]
               );
             cached.labels[resolutionCacheKey] = {
               div: label,
-              shape: shiftToGeometryCenter.transform(allRects),
+              shape: shiftToGeometryCenter.transform(rangeRectsJts),
               width: maxWidth,
               height: rangeRect.getHeight(),
             };
@@ -427,7 +430,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             maxWidth - 1,
             Math.floor(
               screenGeometryJts
-                .intersection(allRects)
+                .intersection(rangeRectsJts)
                 .getEnvelopeInternal()
                 .getWidth()
             ) - 1
@@ -532,9 +535,10 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         : undefined;
     const center = centerAroundJts.getCoordinate();
     const envelope = allRects.getEnvelopeInternal();
+    const envelopeCenter = envelope.centre();
     return jsts.geom.util.AffineTransformation.translationInstance(
-      center.x - envelope.getWidth() / 2,
-      center.y - envelope.getHeight() / 2
+      center.x - envelopeCenter.x,
+      center.y - envelopeCenter.y
     ).transform(allRects);
   };
 
