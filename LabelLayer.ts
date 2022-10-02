@@ -121,6 +121,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   private geoJson = new GeoJSON();
   private cache = new WeakMap<Feature, CacheEntry>();
   private occupiedSpaces: jsts.geom.Geometry[] = [];
+  private occupiedByLabels: jsts.geom.Geometry[] = [];
 
   constructor(layer: LabelLayer) {
     super(layer);
@@ -170,6 +171,12 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     world: number,
     rotation: number
   ): HTMLElement => {
+    const geometry = feature.getGeometry();
+    if (!(geometry instanceof Point || geometry instanceof Polygon)) {
+      // Other types not supported by code below.
+      return;
+    }
+
     const cached = this.getCacheEntry(feature);
     const resolutionCacheKey =
       2 * Math.floor(frameState.viewState.zoom) +
@@ -184,7 +191,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
       apply(transform, screenGeometryCenter);
 
       const labelParams = cached.labels[resolutionCacheKey];
-      if (this.tryOccupy(screenGeometryCenter, labelParams)) {
+      if (this.tryOccupy(screenGeometryCenter, labelParams, true)) {
         const labelDiv =
           world === 0
             ? labelParams.div
@@ -197,10 +204,12 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         }px`;
         this.container.append(labelDiv);
         return labelDiv;
+      } else {
+        // Cannot use cached placement due to intersections
+        return;
       }
     }
 
-    const geometry = feature.getGeometry();
     const userProjection = getUserProjection();
     const userTransform = userProjection
       ? getTransformFromProjections(
@@ -267,7 +276,8 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
 
           if (
             allowExtendingGeometry ||
-            (rangeRectsJts && !this.intersectsOccupiedSpaces(rangeRectsJts))
+            (rangeRectsJts &&
+              !this.intersectsOccupiedSpaces(rangeRectsJts, false))
           ) {
             //Found okay
             cached.labels[resolutionCacheKey] = {
@@ -293,7 +303,8 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         range.detach();
         const labelParams = cached.labels[resolutionCacheKey];
         const envelope =
-          labelParams && this.tryOccupy(screenGeometryCenter, labelParams);
+          labelParams &&
+          this.tryOccupy(screenGeometryCenter, labelParams, false);
         if (envelope) {
           label.style.left = `${
             screenGeometryJts.getX() + envelope.getMinX()
@@ -303,6 +314,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           }px`;
           return label;
         } else {
+          cached.labels[resolutionCacheKey] = null;
           this.container.removeChild(label);
         }
       }
@@ -394,7 +406,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             allowExtendingGeometry ||
             (allRects &&
               screenGeometryJts.contains(allRects) &&
-              !this.intersectsOccupiedSpaces(allRects))
+              !this.intersectsOccupiedSpaces(allRects, false))
           ) {
             //Found okay
             const shiftToGeometryCenter =
@@ -425,26 +437,38 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         range.detach();
         const labelParams = cached.labels[resolutionCacheKey];
         const envelope =
-          labelParams && this.tryOccupy(screenGeometryCenter, labelParams);
+          labelParams &&
+          this.tryOccupy(screenGeometryCenter, labelParams, false);
         if (envelope) {
           label.style.left = `${envelope.getMinX()}px`;
           label.style.top = `${envelope.getMinY()}px`;
           return label;
         } else {
+          cached.labels[resolutionCacheKey] = null;
           this.container.removeChild(label);
         }
       }
     }
   };
 
-  private intersectsOccupiedSpaces = (geo: jsts.geom.Geometry): boolean => {
+  private intersectsOccupiedSpaces = (
+    geo: jsts.geom.Geometry,
+    checkOnlyLabels: boolean
+  ): boolean => {
+    const blockedRegions = [this.occupiedByLabels];
+    if (!checkOnlyLabels) {
+      blockedRegions.push(this.occupiedSpaces);
+    }
+
     const geoExtent = geo.getEnvelopeInternal();
-    for (const occupiedSpace of this.occupiedSpaces) {
-      if (
-        occupiedSpace.getEnvelopeInternal().intersects(geoExtent) &&
-        occupiedSpace.intersects(geo)
-      ) {
-        return true;
+    for (const blocked of blockedRegions) {
+      for (const occupiedSpace of blocked) {
+        if (
+          occupiedSpace.getEnvelopeInternal().intersects(geoExtent) &&
+          occupiedSpace.intersects(geo)
+        ) {
+          return true;
+        }
       }
     }
     return false;
@@ -452,20 +476,23 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
 
   private tryOccupy(
     center: Coordinate,
-    labelParams: LabelParam
+    labelParams: LabelParam,
+    checkOnlyLabels: boolean
   ): jsts.geom.Envelope {
-    const envelope = new jsts.geom.Envelope(
-      center[0] - labelParams.width / 2,
-      center[0] + labelParams.width / 2,
-      center[1] - labelParams.height / 2,
-      center[1] + labelParams.height / 2
-    );
     const shiftToGeometryCenter =
-      new jsts.geom.util.AffineTransformation().translate(center[0], center[1]);
+      jsts.geom.util.AffineTransformation.translationInstance(
+        center[0],
+        center[1]
+      );
     const labelGeom = shiftToGeometryCenter.transform(labelParams.shape);
-    if (!this.intersectsOccupiedSpaces(labelGeom)) {
-      this.occupiedSpaces.push(labelGeom);
-      return envelope;
+    if (!this.intersectsOccupiedSpaces(labelGeom, checkOnlyLabels)) {
+      this.occupiedByLabels.push(labelGeom);
+      return new jsts.geom.Envelope(
+        center[0] - labelParams.width / 2,
+        center[0] + labelParams.width / 2,
+        center[1] - labelParams.height / 2,
+        center[1] + labelParams.height / 2
+      );
     }
   }
 
@@ -537,6 +564,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
         frameState,
         this.getLayer().getOccupiedSpaces()
       ).flatMap((g) => g);
+      this.occupiedByLabels = [];
       const labels = this.renderWorlds(frameState);
       this.container.replaceChildren(...labels);
     }
