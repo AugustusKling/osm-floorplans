@@ -7,7 +7,68 @@
     <script src="https://unpkg.com/jsts@2.3.0/dist/jsts.min.js"></script>
   </head>
   <body>
-    <div id="map"></div>
+    <main>
+      <header>
+        <select onchange="showView(this)">
+          <option value="">Examples (some slow)</option>
+          <option value="9.894897140153608,47.90977965042816,19,0">
+            Salvatorkolleg
+          </option>
+          <option value="10.167619463196125,48.0041305397267,19,0">
+            Illerpark
+          </option>
+          <option value="8.817400860013827,47.22329556247513,18,0">
+            Campus Rapperswil
+          </option>
+          <option value="-74.0750394913913,4.5977237812293765,20,0">
+            Catedral Bogotá
+          </option>
+          <option value="8.70342429728998,49.410497618017956,19,0">
+            Theater Heidelberg
+          </option>
+          <option value="7.7416176883371595,48.58657506477314,19,0">
+            Straßburg
+          </option>
+          <option value="13.7337755296745,51.028197779790275,18,0">
+            TU Dresden (freezes browser temporary)
+          </option>
+        </select>
+        <label
+          ><input
+            id="outlinesCheckbox"
+            type="checkbox"
+            checked
+            onchange="showOutlines(this)"
+          />Building outlines</label
+        >
+        <button onclick="showInfo(true)">Info</button>
+      </header>
+      <div id="map"></div>
+    </main>
     <div id="levelPicker"></div>
+    <div id="info">
+      <p>Experiment about generating walls from OpenStreetMap indoor data.</p>
+      <p>
+        Use the numbered buttons on the right to switch levels. Buttons are only
+        shown for the indoor data visible in the current map view.
+      </p>
+      <p>
+        Data is pulled from Overpass API which gives world wide converage,
+        kindly hosted by
+        <a href="https://maps.mail.ru/osm/tools/overpass/">VK</a>. Indoor maps
+        are only available for a few buildings yet. See
+        <a href="https://wiki.openstreetmap.org/wiki/Simple_Indoor_Tagging"
+          >Simple Indoor Tagging</a
+        >
+        in the OSM wiki to learn how to add more.
+      </p>
+      <p>
+        Source code for this map is available at
+        <a href="https://github.com/AugustusKling/osm-floorplans/"
+          >github.com/AugustusKling/osm-floorplans</a
+        >. Note that this is an experiment only and not something to be reused.
+      </p>
+      <button onclick="showInfo(false)">Back to map</button>
+    </div>
   </body>
 </html>

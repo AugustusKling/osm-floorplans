@@ -6,19 +6,36 @@ body {
   padding: 0;
 }
 
-#map {
+main {
+  display: grid;
+  grid-template-rows: min-content auto;
   height: 100vh;
+}
+header {
+  padding: 0.2em;
 }
 
 #levelPicker {
   position: absolute;
-  top: 1ex;
+  top: 5ex;
   right: 1ex;
   display: flex;
   flex-direction: column;
-  gap:0.5ex;
+  gap: 0.5ex;
 }
 
 #levelPicker button.active {
   filter: invert();
+}
+
+#info {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: auto;
+  background: white;
+  padding: 1em;
+  display: none;
 }

@@ -41,6 +41,10 @@ parser.inject(
   MultiPolygon
 );
 
+window.showInfo = (show: boolean): void => {
+  document.querySelector('#info').style.display = show ? 'block' : 'none';
+};
+
 const map = new Map({
   target: 'map',
   layers: [
@@ -54,6 +58,15 @@ const map = new Map({
   }),
 });
 const buildingVisibilityMinZoom = 15;
+
+let buildingOutlinesVisible = true;
+window.showOutlines = (checkbox: HTMLInputElement): void => {
+  buildingOutlinesVisible = checkbox.checked;
+  map
+    .getAllLayers()
+    .filter((l) => l.getSource() instanceof VectorSource)
+    .forEach((l) => l.changed());
+};
 
 let currentLevel = 0;
 function isOnCurrentLevel(f: FeatureLike) {
@@ -105,6 +118,18 @@ map.addLayer(
 );*/
 
 const levelPicker = document.getElementById('levelPicker');
+const setLevel = (level: number): void => {
+  Array.from(levelPicker.children).forEach((b) =>
+    (b as HTMLElement).classList.remove('active')
+  );
+  currentLevel = level;
+  source.setActiveLevel(currentLevel);
+  map
+    .getAllLayers()
+    .filter((l) => l.getSource() instanceof VectorSource)
+    .forEach((l) => l.changed());
+  rerenderLevel();
+};
 let levelPickerUpdateTimer: number;
 const updateLevelPickerAsync = () => {
   clearTimeout(levelPickerUpdateTimer);
@@ -133,16 +158,7 @@ const updateLevelPickerAsync = () => {
         button.classList.add('active');
       }
       button.onclick = () => {
-        Array.from(levelPicker.children).forEach((b) =>
-          (b as HTMLElement).classList.remove('active')
-        );
-        currentLevel = level;
-        source.setActiveLevel(currentLevel);
-        map
-          .getAllLayers()
-          .filter((l) => l.getSource() instanceof VectorSource)
-          .forEach((l) => l.changed());
-        rerenderLevel();
+        setLevel(level);
       };
       levelPicker.append(button);
     }
@@ -150,6 +166,21 @@ const updateLevelPickerAsync = () => {
 };
 map.getView().addEventListener('change', updateLevelPickerAsync);
 source.addEventListener('change', updateLevelPickerAsync);
+
+window.showView = (select: HTMLSelectElement): void => {
+  if (select.value.includes(',')) {
+    const [lon, lat, zoom, level] = select.value.split(/,/).map(parseFloat);
+    const center = transform([lon, lat], 'EPSG:4326', 'EPSG:3857');
+    map.getView().setCenter(center);
+    map.getView().setZoom(zoom);
+    setLevel(level);
+  } else {
+    const center = map.getView().getCenter();
+    const centerWorld = transform(center, 'EPSG:3857', 'EPSG:4326');
+    console.log(centerWorld.concat(map.getView().getZoom()).join(','));
+  }
+  select.value = '';
+};
 
 const buildingStyle = [
   new Style({
@@ -287,7 +318,7 @@ map.addLayer(
     },
     style: (f, meterPerPixel) => {
       if (f.get('building')) {
-        return buildingStyle;
+        return buildingOutlinesVisible ? buildingStyle : null;
       }
 
       if (!isOnCurrentLevel(f)) {
