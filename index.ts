@@ -457,7 +457,22 @@ map.addLayer(
 
       const typeName: string =
         f.get('shop') || f.get('amenity') || f.get('vending');
-      if (variant === 'default' && typeName) {
+      const name: string = f.get('name');
+      const reference: string = f.get('ref');
+      const shortest = [
+        ['typeName', typeName],
+        ['name', name],
+        ['reference', reference],
+      ]
+        .filter(([k, v]) => Boolean(v))
+        .sort((a, b) => a[1].length - b[1].length)
+        .map(([k]) => k)[0];
+
+      if (
+        typeName &&
+        (variant === 'default' ||
+          (variant === 'shortest-only' && shortest === 'typeName'))
+      ) {
         const typeNameLabel = document.createElement('div');
         typeNameLabel.style.margin = '0';
         typeNameLabel.style.fontSize = '11px';
@@ -469,16 +484,22 @@ map.addLayer(
         label.append(typeNameLabel);
       }
 
-      const name = f.get('name');
-      if (variant === 'default' && name) {
+      if (
+        name &&
+        (variant === 'default' ||
+          (variant === 'shortest-only' && shortest === 'name'))
+      ) {
         const title = document.createElement('p');
         title.style.font = 'bold 12px sans-serif';
         title.style.margin = '0';
         title.append(name);
         label.append(title);
       }
-      const reference = f.get('ref');
-      if (['default', 'ref-only'].includes(variant) && reference) {
+      if (
+        reference &&
+        (variant === 'default' ||
+          (variant === 'shortest-only' && shortest === 'reference'))
+      ) {
         const ref = document.createElement('p');
         ref.style.font = '12px sans-serif';
         ref.style.margin = '0';
@@ -543,8 +564,8 @@ map.addLayer(
           };
         }
       }
-      if (variant === 'default' && reference) {
-        return { fallbackVariant: 'ref-only' };
+      if (variant === 'default' && shortest) {
+        return { fallbackVariant: 'shortest-only' };
       }
     },
   })
