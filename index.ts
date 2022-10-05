@@ -44,6 +44,16 @@ parser.inject(
 window.showInfo = (show: boolean): void => {
   document.querySelector('#info').style.display = show ? 'block' : 'none';
 };
+window.toggleFullscreen = (): void => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch((e) => {
+      console.error(e);
+      alert('Fullscreen mode not permitted by browser.');
+    });
+  } else {
+    document.exitFullscreen();
+  }
+};
 
 const map = new Map({
   target: 'map',
