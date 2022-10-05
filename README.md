@@ -1,5 +1,9 @@
-# Experiment of Rendering Floorplan from OSM Data
+# Experiment on rendering floor plans from OpenStreetMap data
 
-Example: https://typescript-6ixy5d.stackblitz.io
+Interactive example: https://typescript-6ixy5d.stackblitz.io
 
 [Edit on StackBlitz ⚡️](https://stackblitz.com/edit/typescript-6ixy5d)
+
+Example rendering
+
+![biberach.png](biberach.png)
