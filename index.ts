@@ -283,6 +283,13 @@ const stairsStyle = [
   stairsUpArrowhead,*/ stairsIconStyle,
 ];
 
+const walkwayStyle = new Style({
+  stroke: new Stroke({
+    color: 'green',
+    width: 5,
+  }),
+});
+
 map.addLayer(
   new VectorLayer({
     source,
@@ -363,6 +370,9 @@ map.addLayer(
       }
       if (f.get('generated-wall')) {
         return wallStyle;
+      }
+      if (f.get('generated-walkway')) {
+        return walkwayStyle;
       }
       if (
         f.get('indoor') === 'stairs' ||

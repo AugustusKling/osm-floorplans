@@ -12,6 +12,7 @@ import {
 import { Extent } from 'ol/extent';
 import { Projection } from 'ol/proj';
 import { FeatureLike } from 'ol/Feature';
+import { squaredDistance } from 'ol/coordinate';
 
 const parser = new jsts.io.OL3Parser();
 parser.inject(
@@ -32,6 +33,7 @@ class Level {
   wall = new Feature({
     'generated-wall': 'yes',
   });
+  unhandledEntrances: Feature[] = [];
 
   constructor(public levelNumber: number, seedGeometry: jsts.geom.Geometry) {
     this.wall.set('level', String(levelNumber));
@@ -55,8 +57,37 @@ class Level {
 
   addFeature = (f: Feature, featureJts: jsts.geom.Geometry): void => {
     this.features.push(f);
-    this.geometry = this.geometry.union(featureJts.buffer(this.outerWallWidth));
+    const geometry = f.getGeometry();
+    // Level geometry is used to check for contained feature for which only areas are relevant.
+    if (geometry instanceof Polygon || geometry instanceof MultiPolygon) {
+      this.geometry = this.geometry.union(
+        featureJts.buffer(this.outerWallWidth)
+      );
+    }
     this.wallRebuildRequired = true;
+
+    const entrance = f.get('entrance');
+    if (
+      geometry instanceof Point &&
+      ['yes', 'main', 'secondary', 'staircase'].includes(entrance)
+    ) {
+      this.unhandledEntrances.push(f);
+    }
+  };
+
+  getWallSourceAreas = (): Polygon[] => {
+    const polys: Polygon[] = [];
+    for (const room of this.features.filter((f) =>
+      ['room', 'corridor'].includes(f.get('indoor'))
+    )) {
+      const roomGeo = room.getGeometry();
+      if (roomGeo instanceof Polygon) {
+        polys.push(roomGeo);
+      } else if (roomGeo instanceof MultiPolygon) {
+        polys.push(...roomGeo.getPolygons());
+      }
+    }
+    return polys;
   };
 
   rebuildWall = (): void => {
@@ -68,22 +99,12 @@ class Level {
     const wallLines = new MultiLineString([]);
     /** Walled, passable areas. Basically rooms of any type. */
     const wallSourceAreas = new MultiPolygon([]);
-    for (const room of this.features.filter((f) =>
-      ['room', 'corridor'].includes(f.get('indoor'))
-    )) {
-      const roomGeo = room.getGeometry();
-      const polys: Polygon[] = [];
-      if (roomGeo instanceof Polygon) {
-        polys.push(roomGeo);
-      } else if (roomGeo instanceof MultiPolygon) {
-        polys.push(...roomGeo.getPolygons());
-      }
-      for (const poly of polys) {
-        wallSourceAreas.appendPolygon(poly);
-      }
-      for (const ring of polys.flatMap((p) => p.getLinearRings())) {
-        wallLines.appendLineString(new LineString(ring.getCoordinates()));
-      }
+    const polys = this.getWallSourceAreas();
+    for (const poly of polys) {
+      wallSourceAreas.appendPolygon(poly);
+    }
+    for (const ring of polys.flatMap((p) => p.getLinearRings())) {
+      wallLines.appendLineString(new LineString(ring.getCoordinates()));
     }
     for (const wall of this.features.filter(
       (f) => f.get('indoor') === 'wall'
@@ -260,6 +281,49 @@ class Level {
       }
     }
   };
+
+  public generateEntranceWalkways = (): Feature[] => {
+    const generatedWalkways: Feature[] = [];
+    if (this.unhandledEntrances.length > 0) {
+      const wallLines = new MultiLineString([]);
+      const rings = this.getWallSourceAreas().flatMap((p) =>
+        p.getLinearRings()
+      );
+      for (const entrance of this.unhandledEntrances) {
+        const entrancePoint = entrance.getGeometry() as Point;
+        for (const ring of rings) {
+          const closest = ring.getClosestPoint(
+            entrancePoint.getFirstCoordinate()
+          );
+          const isClose =
+            squaredDistance(entrancePoint.getFirstCoordinate(), closest) < 1;
+          if (isClose) {
+            const doorCircle = parser.read(entrancePoint).buffer(0.5);
+            const intersections = parser.read(ring).intersection(doorCircle);
+            const coords = intersections.getCoordinates();
+            if (coords.length > 1) {
+              const walkway = new Feature(
+                new LineString([
+                  [coords[0].x, coords[0].y],
+                  [coords[coords.length - 1].x, coords[coords.length - 1].y],
+                ])
+              );
+              walkway.setProperties({
+                'generated-walkway': 'yes',
+                level: String(this.levelNumber),
+                name: entrance.get('name'),
+              });
+              this.features.push(walkway);
+              generatedWalkways.push(walkway);
+              break;
+            }
+          }
+        }
+      }
+      this.unhandledEntrances = [];
+    }
+    return generatedWalkways;
+  };
 }
 
 export function parseLevel(f: FeatureLike): { from: number; to: number }[] {
@@ -303,7 +367,9 @@ export class BuildingTopologySource extends VectorSource {
   private levelsOfFeature = (feature: Feature): number[] => {
     const level = parseLevel(feature);
     if (level) {
-      return level.flatMap((l) => [l.from, l.to]);
+      return level.flatMap((l) =>
+        l.from === l.to ? [l.from] : [l.from, l.to]
+      );
     } else {
       return [];
     }
@@ -355,11 +421,10 @@ export class BuildingTopologySource extends VectorSource {
     );
     const start = new Date().getTime();
     for (const level of this.levels) {
-      if (
+      const levelInView =
         level.levelNumber === this.activeLevel &&
-        level.wallRebuildRequired &&
-        extentJts.intersects(level.geometry.getEnvelopeInternal())
-      ) {
+        extentJts.intersects(level.geometry.getEnvelopeInternal());
+      if (levelInView && level.wallRebuildRequired) {
         const elapsed = new Date().getTime() - start;
         if (elapsed < 100) {
           level.rebuildWall();
@@ -370,6 +435,10 @@ export class BuildingTopologySource extends VectorSource {
           }, 500);
           break;
         }
+      }
+
+      if (levelInView && level.unhandledEntrances.length > 0) {
+        this.resultingFeatures.addFeatures(level.generateEntranceWalkways());
       }
     }
     return this.resultingFeatures
