@@ -13,6 +13,7 @@ import { Extent } from 'ol/extent';
 import { Projection } from 'ol/proj';
 import { FeatureLike } from 'ol/Feature';
 import { squaredDistance } from 'ol/coordinate';
+import { linearRingsContainsXY } from 'ol/geom/flat/contains';
 
 const parser = new jsts.io.OL3Parser();
 parser.inject(
@@ -286,9 +287,7 @@ class Level {
     const generatedWalkways: Feature[] = [];
     if (this.unhandledEntrances.length > 0) {
       const wallLines = new MultiLineString([]);
-      const rings = this.getWallSourceAreas().flatMap((p) =>
-        p.getLinearRings()
-      );
+      const rings = this.getWallSourceAreas();
       for (const entrance of this.unhandledEntrances) {
         const entrancePoint = entrance.getGeometry() as Point;
         for (const ring of rings) {
@@ -299,19 +298,43 @@ class Level {
             squaredDistance(entrancePoint.getFirstCoordinate(), closest) < 1;
           if (isClose) {
             const doorCircle = parser.read(entrancePoint).buffer(0.5);
-            const intersections = parser.read(ring).intersection(doorCircle);
+            const intersections = parser
+              .read(ring.getLinearRings()[0])
+              .intersection(doorCircle);
             const coords = intersections.getCoordinates();
             if (coords.length > 1) {
+              const p1 = [coords[0].x, coords[0].y];
+              const p2 = [
+                coords[coords.length - 1].x,
+                coords[coords.length - 1].y,
+              ];
+              const angle = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]);
+              const walkwayCenter = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2];
+              const walkwayLength = 1;
+              const walkwayOutside = [
+                walkwayCenter[0] +
+                  walkwayLength * Math.cos(angle + Math.PI / 2),
+                walkwayCenter[1] +
+                  walkwayLength * Math.sin(angle + Math.PI / 2),
+              ];
+              const walkwayEndInside = ring.containsXY(
+                walkwayOutside[0],
+                walkwayOutside[1]
+              );
+              if (walkwayEndInside) {
+                const diffX = walkwayCenter[0] - walkwayOutside[0];
+                const diffY = walkwayCenter[1] - walkwayOutside[1];
+                walkwayOutside[0] = walkwayCenter[0] + 2 * diffX;
+                walkwayOutside[1] = walkwayCenter[1] + 2 * diffY;
+              }
               const walkway = new Feature(
-                new LineString([
-                  [coords[0].x, coords[0].y],
-                  [coords[coords.length - 1].x, coords[coords.length - 1].y],
-                ])
+                new LineString([walkwayOutside, walkwayCenter])
               );
               walkway.setProperties({
                 'generated-walkway': 'yes',
                 level: String(this.levelNumber),
                 name: entrance.get('name'),
+                entrance: entrance.get('entrance')
               });
               this.features.push(walkway);
               generatedWalkways.push(walkway);

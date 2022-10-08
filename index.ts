@@ -15,7 +15,7 @@ import {
 } from 'ol/geom';
 import VectorLayer from 'ol/layer/Vector';
 import VectorSource, { VectorSourceEvent } from 'ol/source/Vector';
-import { Fill, RegularShape, Stroke, Style, Icon } from 'ol/style';
+import { Fill, RegularShape, Stroke, Style, Icon, Text } from 'ol/style';
 import { LabelLayer } from './LabelLayer';
 import { defaultOrder } from 'ol/renderer/vector';
 import { OverpassSource } from './OverpassSource';
@@ -38,6 +38,7 @@ import {
   toiletsIconUri,
   toiletsMaleIconUri,
 } from './icons';
+import { clamp } from 'ol/math';
 
 const parser = new jsts.io.OL3Parser();
 parser.inject(
@@ -78,7 +79,7 @@ const map = new Map({
 });
 const buildingVisibilityMinZoom = 15;
 
-let buildingOutlinesVisible = true;
+let buildingOutlinesVisible = false;
 window.showOutlines = (checkbox: HTMLInputElement): void => {
   buildingOutlinesVisible = checkbox.checked;
   map
@@ -245,14 +246,16 @@ const wallStyle = new Style({
     width: 2,
   }),
 });
-const stairsUpArrowhead = new Style({
-  image: new RegularShape({
-    points: 3,
-    radius: 5,
+const walkwayArrowhead = new Style({
+  image: null,
+  text: new Text({
     fill: new Fill({
-      color: 'black',
+      color: 'green',
     }),
-    rotateWithView: true,
+    stroke: new Stroke({
+      width: 3,
+      color: 'white',
+    }),
   }),
 });
 const stairsIcon = new Icon({
@@ -274,21 +277,8 @@ const stairsStyle = [
       lineCap: 'butt',
     }),
   }),
-  /*new Style({
-    stroke: new Stroke({
-      color: 'black',
-      width: 1,
-    }),
-  }),
-  stairsUpArrowhead,*/ stairsIconStyle,
+  stairsIconStyle,
 ];
-
-const walkwayStyle = new Style({
-  stroke: new Stroke({
-    color: 'green',
-    width: 5,
-  }),
-});
 
 map.addLayer(
   new VectorLayer({
@@ -372,7 +362,51 @@ map.addLayer(
         return wallStyle;
       }
       if (f.get('generated-walkway')) {
-        return walkwayStyle;
+        const geo = f.getGeometry() as LineString;
+        const start = geo.getFirstCoordinate();
+        const end = geo.getLastCoordinate();
+        const dx = end[0] - start[0];
+        const dy = end[1] - start[1];
+        let rotation = Math.atan2(dy, dx);
+        if (rotation < 0) {
+          rotation = rotation + 2 * Math.PI;
+        }
+        walkwayArrowhead.setGeometry(new Point(end));
+        const arrowheadRadius = clamp(2 / meterPerPixel, 6, 18);
+        if (
+          arrowheadRadius !==
+          (walkwayArrowhead.getImage() as RegularShape)?.getRadius()
+        ) {
+          walkwayArrowhead.setImage(
+            new RegularShape({
+              points: 3,
+              radius: arrowheadRadius,
+              displacement: [0, -1.5 * arrowheadRadius],
+              fill: new Fill({
+                color: 'green',
+              }),
+              rotateWithView: true,
+            })
+          );
+        }
+        walkwayArrowhead.getImage().setRotation(-rotation - 1.5 * Math.PI);
+
+        const text = walkwayArrowhead.getText();
+        text.setText(f.get('name'));
+        text.setOffsetX(-2.5 * arrowheadRadius * Math.cos(rotation));
+        text.setOffsetY(2.5 * arrowheadRadius * Math.sin(rotation));
+        if (rotation >= 5.5 || rotation <= 0.79) {
+          text.setTextAlign('right');
+        } else if (rotation >= 0.79 && rotation <= 2.36) {
+          text.setTextAlign('center');
+          text.setOffsetY(1.25 * text.getOffsetY());
+        } else if (rotation >= 2.36 && rotation <= 3.93) {
+          text.setTextAlign('left');
+        } else {
+          text.setTextAlign('center');
+          text.setOffsetY(1.5 * text.getOffsetY());
+        }
+        return [walkwayArrowhead];
       }
       if (
         f.get('indoor') === 'stairs' ||
@@ -385,18 +419,10 @@ map.addLayer(
           const stepSize = 0.3 / meterPerPixel;
           stairsStyle[0].getStroke().setLineDash([stepSize, stepSize]);
 
-          const coords = geo.getCoordinates();
-          const start = coords[coords.length - 2];
-          const end = coords[coords.length - 1];
-          const dx = end[0] - start[0];
-          const dy = end[1] - start[1];
-          const rotation = Math.atan2(dy, dx);
           const conveying: 'forward' | 'backward' = f.get('conveying');
           const level: string = f.get('level');
           stairsIconStyle.setGeometry(null);
           if (f.get('incline') === 'down') {
-            stairsUpArrowhead.setGeometry(new Point(geo.getFirstCoordinate()));
-            stairsUpArrowhead.getImage().setRotation(-rotation - 0.5 * Math.PI);
             if (level?.startsWith(currentLevel + ';')) {
               stairsIconStyle.setGeometry(new Point(geo.getLastCoordinate()));
               stairsIconStyle.setImage(
@@ -417,8 +443,6 @@ map.addLayer(
               );
             }
           } else {
-            stairsUpArrowhead.setGeometry(new Point(geo.getLastCoordinate()));
-            stairsUpArrowhead.getImage().setRotation(-rotation - 1.5 * Math.PI);
             if (level?.startsWith(currentLevel + ';')) {
               stairsIconStyle.setGeometry(new Point(geo.getFirstCoordinate()));
               stairsIconStyle.setImage(
