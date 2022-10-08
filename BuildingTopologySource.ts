@@ -287,20 +287,22 @@ class Level {
     const generatedWalkways: Feature[] = [];
     if (this.unhandledEntrances.length > 0) {
       const wallLines = new MultiLineString([]);
-      const rings = this.getWallSourceAreas();
+      const walledAreas = this.getWallSourceAreas();
       for (const entrance of this.unhandledEntrances) {
         const entrancePoint = entrance.getGeometry() as Point;
-        for (const ring of rings) {
-          const closest = ring.getClosestPoint(
+        for (const walledArea of walledAreas) {
+          const closest = walledArea.getClosestPoint(
             entrancePoint.getFirstCoordinate()
           );
           const isClose =
             squaredDistance(entrancePoint.getFirstCoordinate(), closest) < 1;
           if (isClose) {
             const doorCircle = parser.read(entrancePoint).buffer(0.5);
-            const intersections = parser
-              .read(ring.getLinearRings()[0])
-              .intersection(doorCircle);
+            const intersections = walledArea
+              .getLinearRings()
+              .map((anyRing) =>
+                parser.read(anyRing).intersection(doorCircle)
+              )[0];
             const coords = intersections.getCoordinates();
             if (coords.length > 1) {
               const p1 = [coords[0].x, coords[0].y];
@@ -317,7 +319,7 @@ class Level {
                 walkwayCenter[1] +
                   walkwayLength * Math.sin(angle + Math.PI / 2),
               ];
-              const walkwayEndInside = ring.containsXY(
+              const walkwayEndInside = walledArea.containsXY(
                 walkwayOutside[0],
                 walkwayOutside[1]
               );
@@ -334,7 +336,7 @@ class Level {
                 'generated-walkway': 'yes',
                 level: String(this.levelNumber),
                 name: entrance.get('name'),
-                entrance: entrance.get('entrance')
+                entrance: entrance.get('entrance'),
               });
               this.features.push(walkway);
               generatedWalkways.push(walkway);
