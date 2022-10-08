@@ -9,13 +9,14 @@ export class OverpassSource extends VectorSource {
   private queryTemplate = `[out:json][timeout:25];
   // gather results
   (
-    nw["indoor"]["level"]({{bbox}});
-    nw["door"]["level"]({{bbox}});
-    nw["entrance"]["level"]({{bbox}});
-    nw["shop"]["level"]({{bbox}});
-    nw[amenity][level]({{bbox}});
+    nw[indoor][level][!building]({{bbox}});
+    nw[door][level][!building]({{bbox}});
+    nw[entrance][level][!building]({{bbox}});
+    nw[shop][level][!building]({{bbox}});
+    nw[amenity][level][!building]({{bbox}});
   ) -> .indoor;
-  .indoor >; is_in;nwr(pivot._)[building]({{bbox}}) -> .buildings;
+  (way[indoor=room]({{bbox}});way[indoor=corridor]({{bbox}});) -> .rooms;
+  .rooms >; is_in;nwr(pivot._)[building]({{bbox}}) -> .buildings;
   // print results
   (.indoor; .buildings;); out body;
   >;
