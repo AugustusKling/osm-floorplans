@@ -13,7 +13,6 @@ import { Extent } from 'ol/extent';
 import { Projection } from 'ol/proj';
 import { FeatureLike } from 'ol/Feature';
 import { squaredDistance } from 'ol/coordinate';
-import { linearRingsContainsXY } from 'ol/geom/flat/contains';
 
 const parser = new jsts.io.OL3Parser();
 parser.inject(
@@ -79,7 +78,7 @@ class Level {
   getWallSourceAreas = (): Polygon[] => {
     const polys: Polygon[] = [];
     for (const room of this.features.filter((f) =>
-      ['room', 'corridor'].includes(f.get('indoor'))
+      f.get('indoor')==='room'
     )) {
       const roomGeo = room.getGeometry();
       if (roomGeo instanceof Polygon) {
@@ -190,7 +189,7 @@ class Level {
       })),
       // Unwalled walkable area (since there are indoor=area occasionally outwit rooms).
       ...this.features
-        .filter((f) => f.get('indoor') === 'area')
+        .filter((f) => ['area', 'corridor'].includes(f.get('indoor')))
         .map((f) => f.getGeometry())
         .filter((geo) => geo instanceof Polygon || geo instanceof MultiPolygon)
         .map((poly) => ({
