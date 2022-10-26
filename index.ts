@@ -187,6 +187,14 @@ const updateLevelPickerAsync = () => {
 map.getView().addEventListener('change', updateLevelPickerAsync);
 source.addEventListener('change', updateLevelPickerAsync);
 
+const zoomCloserInfo = document.querySelector(
+  '#zoomCloserInfo'
+) as HTMLDivElement;
+map.getView().addEventListener('change:resolution', () => {
+  const showHint = map.getView().getZoom() < buildingVisibilityMinZoom;
+  zoomCloserInfo.style.display = showHint ? 'block' : 'none';
+});
+
 window.showView = (select: HTMLSelectElement): void => {
   if (select.value.includes(',')) {
     const [lon, lat, zoom, level] = select.value.split(/,/).map(parseFloat);

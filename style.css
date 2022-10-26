@@ -32,6 +32,17 @@ header label {
   filter: invert();
 }
 
+#zoomCloserInfo {
+  position: absolute;
+  top: 5ex;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1ex;
+  background-color: white;
+  border: 1px solid gray;
+  display: none;
+}
+
 #info {
   position: absolute;
   top: 0;
