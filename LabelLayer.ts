@@ -291,20 +291,41 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
               !this.intersectsOccupiedSpaces(rangeRectsJts, false))
           ) {
             //Found okay
-            cached.labels[resolutionCacheKey] = {
-              div: label,
-              shape: jsts.geom.util.AffineTransformation.translationInstance(
-                -screenGeometryCenter[0],
-                -screenGeometryCenter[1]
-              ).transform(rangeRectsJts),
-              width: rangeRectsJts.getEnvelopeInternal().getWidth(),
-              height: rangeRectsJts.getEnvelopeInternal().getHeight(),
-            };
-            break;
+            const maybeLastCandidate = cached.labels[resolutionCacheKey];
+            const newLabelWidth = rangeRectsJts
+              .getEnvelopeInternal()
+              .getWidth();
+            const newLabelHeight = rangeRectsJts
+              .getEnvelopeInternal()
+              .getHeight();
+            const newLabelRatio = newLabelWidth / newLabelHeight;
+            const oldLabelRatio = maybeLastCandidate
+              ? maybeLastCandidate.width / maybeLastCandidate.height
+              : null;
+            if (
+              oldLabelRatio === null ||
+              // 2.3 is arbitrary but looks nice.
+              (newLabelRatio < oldLabelRatio && newLabelRatio > 2.3)
+            ) {
+              cached.labels[resolutionCacheKey] = {
+                div: label.cloneNode(true) as HTMLDivElement,
+                shape: jsts.geom.util.AffineTransformation.translationInstance(
+                  -screenGeometryCenter[0],
+                  -screenGeometryCenter[1]
+                ).transform(rangeRectsJts),
+                width: newLabelWidth,
+                height: newLabelHeight,
+              };
+            } else if (oldLabelRatio !== null) {
+              break;
+            }
           }
 
           maxWidth = rangeRectsJts.getEnvelopeInternal().getWidth() - 50;
-          if (maxWidth < 30) {
+          if (
+            maxWidth < 30 &&
+            cached.labels[resolutionCacheKey] === undefined
+          ) {
             // Arbitry minimum size not reached.
             cached.labels[resolutionCacheKey] = null;
             return;
@@ -317,6 +338,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           labelParams &&
           this.tryOccupy(screenGeometryCenter, labelParams, false);
         if (envelope) {
+          label.style.width = labelParams.div.style.width;
           label.style.left = `${
             screenGeometryJts.getX() - labelParams.width / 2
           }px`;
