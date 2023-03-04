@@ -399,9 +399,17 @@ export class BuildingTopologySource extends VectorSource {
   private levelsOfFeature = (feature: Feature): number[] => {
     const level = parseLevel(feature);
     if (level) {
-      return level.flatMap((l) =>
-        l.from === l.to ? [l.from] : [l.from, l.to]
-      );
+      return level.flatMap((l) => {
+        const min = Math.min(l.from, l.to);
+        const max = Math.max(l.from, l.to);
+        const levels = [min];
+        let current = min;
+        while (current + 1 <= max) {
+          current = current + 1;
+          levels.push(current);
+        }
+        return levels;
+      });
     } else {
       return [];
     }

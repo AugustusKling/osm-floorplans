@@ -21,7 +21,7 @@ import { defaultOrder } from 'ol/renderer/vector';
 import { OverpassSource } from './OverpassSource';
 import { createXYZ } from 'ol/tilegrid';
 import { tile } from 'ol/loadingstrategy';
-import { transform } from 'ol/proj';
+import { transform, transformExtent } from 'ol/proj';
 import { TileDebug } from 'ol/source';
 import { BuildingTopologySource, parseLevel } from './BuildingTopologySource';
 import VectorEventType from 'ol/source/VectorEventType';
@@ -39,6 +39,7 @@ import {
   toiletsMaleIconUri,
 } from './icons';
 import { clamp } from 'ol/math';
+import { getTopLeft, getBottomRight, boundingExtent } from 'ol/extent';
 import { OL3Parser } from 'jsts/org/locationtech/jts/io';
 
 const parser = new OL3Parser();
@@ -101,6 +102,32 @@ function isOnCurrentLevel(f: FeatureLike) {
   );
 }
 
+const initialParams = Object.fromEntries(new URLSearchParams(location.search).entries());
+if (initialParams.west && initialParams.north && initialParams.east && initialParams.south && initialParams.level) {
+  const initialExtent = boundingExtent([
+    [parseFloat(initialParams.west), parseFloat(initialParams.north)],
+    [parseFloat(initialParams.east), parseFloat(initialParams.south)]
+  ]);
+  map.getView().fit(transformExtent(initialExtent, 'EPSG:4326', map.getView().getProjection()));
+  currentLevel = parseFloat(initialParams.level);
+}
+const updateURL = (): void => {
+  const viewExtent = map.getView().calculateExtent();
+  const extent = transformExtent(viewExtent, map.getView().getProjection(), 'EPSG:4326');
+  const params = new URLSearchParams();
+  const precision = 5;
+  const tl = getTopLeft(extent);
+  params.set('west', tl[0].toFixed(precision));
+  params.set('north', tl[1].toFixed(precision));
+  const br = getBottomRight(extent);
+  params.set('east', br[0].toFixed(precision));
+  params.set('south', br[1].toFixed(precision));
+  params.set('level', currentLevel);
+  history.replaceState(null, "", '?'+params.toString());
+};
+updateURL();
+map.getView().addEventListener('change', updateURL);
+
 const source = new BuildingTopologySource({
   activeLevel: currentLevel,
 });
@@ -150,6 +177,8 @@ const setLevel = (level: number): void => {
     .filter((l) => l.getSource() instanceof VectorSource)
     .forEach((l) => l.changed());
   rerenderLevel();
+  
+  updateURL();
 };
 let levelPickerUpdateTimer: number;
 const updateLevelPickerAsync = () => {
