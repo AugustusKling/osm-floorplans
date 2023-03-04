@@ -1,8 +1,6 @@
 # Experiment on rendering floor plans from OpenStreetMap data
 
-Interactive example: https://typescript-6ixy5d.stackblitz.io
-
-[Edit on StackBlitz ⚡️](https://stackblitz.com/edit/typescript-6ixy5d)
+Interactive example: https://augustuskling.github.io/osm-floorplans/
 
 Example rendering
 
