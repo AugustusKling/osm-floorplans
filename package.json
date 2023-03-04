@@ -1,12 +1,24 @@
 {
-  "name": "typescript",
+  "name": "osm-floorplans",
   "version": "0.0.0",
   "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "disclaimer": "yarn licenses generate-disclaimer > public/licenses-disclaimer.txt"
+  },
   "dependencies": {
     "@types/jsts": "^0.17.13",
     "@types/polylabel": "^1.0.5",
+    "jsts": "2.3.0",
     "ol": "7.1.0",
+    "osmtogeojson": "^3.0.0-beta.5",
     "polylabel": "^1.1.0",
     "proj4": "2.8.0"
+  },
+  "devDependencies": {
+    "vite": "^4.1.4"
   }
 }

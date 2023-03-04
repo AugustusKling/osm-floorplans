@@ -28,6 +28,9 @@ import VectorSource from 'ol/source/Vector';
 import { apply, compose, create, Transform } from 'ol/transform';
 import ViewHint from 'ol/ViewHint';
 import polylabel from 'polylabel';
+import { OL3Parser } from 'jsts/org/locationtech/jts/io';
+import { Geometry as jstsGeometry, Point as jstsPoint, Coordinate as jstsCoordinate, Envelope as jstsEnvelope} from 'jsts/org/locationtech/jts/geom';
+import { AffineTransformation } from 'jsts/org/locationtech/jts/geom/util';
 
 type LabelProvider = (
   /** Feature to be labelled. */
@@ -47,7 +50,7 @@ export class LabelLayer extends Layer<VectorSource> {
     frameState: FrameState,
     transform: Transform,
     rotation: number
-  ) => jsts.geom.Geometry[];
+  ) => jstsGeometry[];
 
   public constructor(
     options: Options<VectorSource> & {
@@ -95,7 +98,7 @@ type LabelParam = {
   /** Label box containing multiple text boxes and possibly whitespace around. */
   div: HTMLDivElement;
   /** Text boxes, relative to inacessibility pole in screen coordinates. */
-  shape: jsts.geom.Geometry;
+  shape: jstsGeometry;
   /** Width of label box. */
   width: number;
   /** Height of label box. */
@@ -118,11 +121,11 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   private container = document.createElement('div');
   private tempTransform = create();
   private features: Feature[];
-  private parser = new jsts.io.OL3Parser();
+  private parser = new OL3Parser();
   private geoJson = new GeoJSON();
   private cache = new WeakMap<Feature, CacheEntry>();
-  private occupiedSpaces: jsts.geom.Geometry[] = [];
-  private occupiedByLabels: jsts.geom.Geometry[] = [];
+  private occupiedSpaces: jstsGeometry[] = [];
+  private occupiedByLabels: jstsGeometry[] = [];
 
   constructor(layer: LabelLayer) {
     super(layer);
@@ -238,7 +241,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     if (screenGeometry instanceof Point) {
       const screenGeometryJts = this.parser.read(
         screenGeometry
-      ) as jsts.geom.Point;
+      ) as jstsPoint;
       cached.inacessibilityPole = (geometry as Point).getCoordinates() as [
         number,
         number
@@ -309,7 +312,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             ) {
               cached.labels[resolutionCacheKey] = {
                 div: label.cloneNode(true) as HTMLDivElement,
-                shape: jsts.geom.util.AffineTransformation.translationInstance(
+                shape: AffineTransformation.translationInstance(
                   -screenGeometryCenter[0],
                   -screenGeometryCenter[1]
                 ).transform(rangeRectsJts),
@@ -407,7 +410,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
             screenGeometryJts
               .getFactory()
               .createPoint(
-                new jsts.geom.Coordinate(
+                new jstsCoordinate(
                   screenGeometryCenter[0],
                   screenGeometryCenter[1]
                 )
@@ -435,7 +438,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
           ) {
             //Found okay
             const shiftToGeometryCenter =
-              jsts.geom.util.AffineTransformation.translationInstance(
+              AffineTransformation.translationInstance(
                 -screenGeometryCenter[0],
                 -screenGeometryCenter[1]
               );
@@ -477,7 +480,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   };
 
   private intersectsOccupiedSpaces = (
-    geo: jsts.geom.Geometry,
+    geo: jstsGeometry,
     checkOnlyLabels: boolean
   ): boolean => {
     const blockedRegions = [this.occupiedByLabels];
@@ -503,16 +506,16 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     center: Coordinate,
     labelParams: LabelParam,
     checkOnlyLabels: boolean
-  ): jsts.geom.Envelope {
+  ): jstsEnvelope {
     const shiftToGeometryCenter =
-      jsts.geom.util.AffineTransformation.translationInstance(
+      AffineTransformation.translationInstance(
         center[0],
         center[1]
       );
     const labelGeom = shiftToGeometryCenter.transform(labelParams.shape);
     if (!this.intersectsOccupiedSpaces(labelGeom, checkOnlyLabels)) {
       this.occupiedByLabels.push(labelGeom);
-      return new jsts.geom.Envelope(
+      return new jstsEnvelope(
         center[0] - labelParams.width / 2,
         center[0] + labelParams.width / 2,
         center[1] - labelParams.height / 2,
@@ -537,13 +540,13 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
   }
 
   private getRectsJts = (
-    centerAroundJts: jsts.geom.Point,
+    centerAroundJts: jstsPoint,
     element: HTMLElement,
     range: Range
-  ): jsts.geom.Geometry => {
+  ): jstsGeometry => {
     const domRects = this.getRects(element, range);
-    const rects: jsts.geom.Geometry[] = domRects.map((rect) => {
-      const envelope = new jsts.geom.Envelope(
+    const rects: jstsGeometry[] = domRects.map((rect) => {
+      const envelope = new jstsEnvelope(
         rect.left,
         rect.right,
         rect.top,
@@ -558,7 +561,7 @@ class LabelRenderer extends LayerRenderer<LabelLayer> {
     const center = centerAroundJts.getCoordinate();
     const envelope = allRects.getEnvelopeInternal();
     const envelopeCenter = envelope.centre();
-    return jsts.geom.util.AffineTransformation.translationInstance(
+    return AffineTransformation.translationInstance(
       center.x - envelopeCenter.x,
       center.y - envelopeCenter.y
     ).transform(allRects);

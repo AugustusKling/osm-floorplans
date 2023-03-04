@@ -13,8 +13,17 @@ import { Extent } from 'ol/extent';
 import { Projection } from 'ol/proj';
 import { FeatureLike } from 'ol/Feature';
 import { squaredDistance } from 'ol/coordinate';
+import { OL3Parser } from 'jsts/org/locationtech/jts/io';
+import Envelope from 'jsts/org/locationtech/jts/geom/Envelope';
+import { UnaryUnionOp } from 'jsts/org/locationtech/jts/operation/union';
+import UnionOp from 'jsts/org/locationtech/jts/operation/union/UnionOp';
+import { GeometryFactory, GeometryCollection } from 'jsts/org/locationtech/jts/geom';
+import { OverlayOp } from 'jsts/org/locationtech/jts/operation/overlay';
+import { BufferOp, BufferParameters } from 'jsts/org/locationtech/jts/operation/buffer';
+import { RelateOp } from 'jsts/org/locationtech/jts/operation/relate';
+import "jsts/org/locationtech/jts/monkey.js";
 
-const parser = new jsts.io.OL3Parser();
+const parser = new OL3Parser();
 parser.inject(
   Point,
   LineString,
@@ -45,12 +54,12 @@ class Level {
       this.geometry
         .getEnvelopeInternal()
         .intersects(geometry.getEnvelopeInternal()) &&
-      this.geometry.intersects(geometry)
+      RelateOp.intersects(this.geometry, geometry)
     );
   };
 
   mergeIn = (other: Level): this => {
-    this.geometry = this.geometry.union(other.geometry);
+    this.geometry = UnionOp.union(this.geometry, other.geometry);
     this.features.push(...other.features);
     return this;
   };
@@ -60,8 +69,8 @@ class Level {
     const geometry = f.getGeometry();
     // Level geometry is used to check for contained feature for which only areas are relevant.
     if (geometry instanceof Polygon || geometry instanceof MultiPolygon) {
-      this.geometry = this.geometry.union(
-        featureJts.buffer(this.outerWallWidth)
+      this.geometry = UnionOp.union(this.geometry,
+        BufferOp.bufferOp(featureJts, this.outerWallWidth)
       );
     }
     this.wallRebuildRequired = true;
@@ -115,7 +124,7 @@ class Level {
       }
     }
 
-    const parser = new jsts.io.OL3Parser();
+    const parser = new OL3Parser();
     parser.inject(
       Point,
       LineString,
@@ -136,24 +145,24 @@ class Level {
       const width = parseFloat(door.get('width'));
       const doorWidth = !isNaN(width) ? width : 1.2;
       doorCirclesCollectionJts.push(
-        parser.read(doorGeo).buffer(doorWidth / 2 - 0.5)
+        BufferOp.bufferOp(parser.read(doorGeo), doorWidth / 2 - 0.5)
       );
     }
-    const doorCirclesJts = new jsts.operation.union.UnaryUnionOp(
-      new jsts.geom.GeometryCollection(
+    const doorCirclesJts = UnaryUnionOp.union(
+      new GeometryCollection(
         doorCirclesCollectionJts,
-        new jsts.geom.GeometryFactory()
+        new GeometryFactory()
       )
-    ).union();
+    );
     /** Wall segments that are passable by doors. */
-    const doorLines = wallLinesJts.intersection(doorCirclesJts);
-    const doorBuffersJts = jsts.operation.buffer.BufferOp.bufferOp(
+    const doorLines = OverlayOp.intersection(wallLinesJts, doorCirclesJts);
+    const doorBuffersJts = BufferOp.bufferOp(
       doorLines,
       0.5,
-      new jsts.operation.buffer.BufferParameters(
+      new BufferParameters(
         8,
-        jsts.operation.buffer.BufferParameters.CAP_SQUARE,
-        jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+        BufferParameters.CAP_SQUARE,
+        BufferParameters.JOIN_MITRE,
         5
       )
     );
@@ -161,13 +170,13 @@ class Level {
     const outerWallWidth = 0.4;
     const innerWallWidth = 0.2;
     // Expand walled areas to simulate thicker outer walls.
-    let wallSourceAreasJts = jsts.operation.buffer.BufferOp.bufferOp(
+    let wallSourceAreasJts = BufferOp.bufferOp(
       parser.read(wallSourceAreas),
       outerWallWidth - innerWallWidth / 2,
-      new jsts.operation.buffer.BufferParameters(
+      new BufferParameters(
         8,
-        jsts.operation.buffer.BufferParameters.CAP_FLAT,
-        jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+        BufferParameters.CAP_FLAT,
+        BufferParameters.JOIN_MITRE,
         5
       )
     );
@@ -205,30 +214,30 @@ class Level {
       // Add innerwall of rooms within other rooms.
       if (
         walkableArea.walled &&
-        !wallSourceAreasJts.contains(walkableAreaJts)
+        !RelateOp.contains(wallSourceAreasJts, walkableAreaJts)
       ) {
         wallSourceAreasJts = wallSourceAreasJts.union(
-          jsts.operation.buffer.BufferOp.bufferOp(
+          BufferOp.bufferOp(
             walkableAreaJts,
             innerWallWidth / 2,
-            new jsts.operation.buffer.BufferParameters(
+            new BufferParameters(
               8,
-              jsts.operation.buffer.BufferParameters.CAP_FLAT,
-              jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+              BufferParameters.CAP_FLAT,
+              BufferParameters.JOIN_MITRE,
               5
             )
           )
         );
       }
       // Remove walkable area.
-      wallSourceAreasJts = wallSourceAreasJts.difference(
-        jsts.operation.buffer.BufferOp.bufferOp(
+      wallSourceAreasJts = OverlayOp.difference(wallSourceAreasJts,
+        BufferOp.bufferOp(
           walkableAreaJts,
           -innerWallWidth / 2,
-          new jsts.operation.buffer.BufferParameters(
+          new BufferParameters(
             8,
-            jsts.operation.buffer.BufferParameters.CAP_FLAT,
-            jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+            BufferParameters.CAP_FLAT,
+            BufferParameters.JOIN_MITRE,
             5
           )
         )
@@ -245,13 +254,13 @@ class Level {
         wallGeo instanceof LineString ||
         wallGeo instanceof MultiLineString
       ) {
-        const wallWithThickness = jsts.operation.buffer.BufferOp.bufferOp(
+        const wallWithThickness = BufferOp.bufferOp(
           parser.read(wallGeo),
           innerWallWidth / 2,
-          new jsts.operation.buffer.BufferParameters(
+          new BufferParameters(
             8,
-            jsts.operation.buffer.BufferParameters.CAP_SQUARE,
-            jsts.operation.buffer.BufferParameters.JOIN_MITRE,
+            BufferParameters.CAP_SQUARE,
+            BufferParameters.JOIN_MITRE,
             5
           )
         );
@@ -259,7 +268,7 @@ class Level {
       }
     }
     // Cut door openings in wall area.
-    wallSourceAreasJts = wallSourceAreasJts.difference(doorBuffersJts);
+    wallSourceAreasJts = OverlayOp.difference(wallSourceAreasJts, doorBuffersJts);
 
     this.wall.setGeometry(parser.write(wallSourceAreasJts));
     this.wallRebuildRequired = false;
@@ -275,8 +284,7 @@ class Level {
         featureGeometry instanceof MultiPolygon
       ) {
         const oldFeatureGeometryJts = parser.read(featureGeometry);
-        const newFeatureGeometryJts =
-          oldFeatureGeometryJts.difference(wallAreaJts);
+        const newFeatureGeometryJts = OverlayOp.difference(oldFeatureGeometryJts, wallAreaJts);
         feature.setGeometry(parser.write(newFeatureGeometryJts));
       }
     }
@@ -437,7 +445,7 @@ export class BuildingTopologySource extends VectorSource {
   };
 
   getFeaturesInExtent = (extent: Extent, projection: Projection): Feature[] => {
-    const extentJts = new jsts.geom.Envelope(
+    const extentJts = new Envelope(
       extent[0],
       extent[2],
       extent[1],

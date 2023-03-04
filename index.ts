@@ -39,8 +39,9 @@ import {
   toiletsMaleIconUri,
 } from './icons';
 import { clamp } from 'ol/math';
+import { OL3Parser } from 'jsts/org/locationtech/jts/io';
 
-const parser = new jsts.io.OL3Parser();
+const parser = new OL3Parser();
 parser.inject(
   Point,
   LineString,
