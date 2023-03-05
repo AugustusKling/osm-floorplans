@@ -431,8 +431,15 @@ export class BuildingTopologySource extends VectorSource {
 
   addFeature = (feature: Feature): void => {
     const levelNumbers = this.levelsOfFeature(feature);
+    if (levelNumbers.length === 0) {
+      return;
+    }
+    const featureGeometryJts = parser.read(feature.getGeometry());
+    if (!featureGeometryJts.isValid()) {
+      console.warn(`Skipping feature ${feature.getId()} with invalid geometry.`, feature.getProperties());
+      return;
+    }
     for (const levelNumber of levelNumbers) {
-      const featureGeometryJts = parser.read(feature.getGeometry());
       const levels = this.getLevels(levelNumber, featureGeometryJts);
       let level: Level;
       if (levels.length > 1) {
